@@ -9,7 +9,7 @@ City searches go directly to Open-Meteo's geocoding service. Selected coordinate
 go to Open-Meteo for weather and CAMS forecasts. These providers also receive the
 network IP address. Manual coordinates bypass city geocoding.
 
-RainViewer, ECCC GeoMet and OpenStreetMap receive the selected map area only
+RainViewer, DWD and OpenStreetMap receive the selected map area only
 after that map is enabled and visible. Closing or leaving its page stops map
 workers and playback. Radar coverage masks are downloaded alongside radar data.
 Weather for the bar refreshes every 15 minutes when automatic refresh is enabled.

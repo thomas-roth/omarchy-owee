@@ -132,8 +132,62 @@ No API key, account, subscription or third-party Python runtime package is neede
 | **Hourly** | How temperatures and rain/snow probabilities change over the next hours. |
 | **Daily** | Each day's conditions and the times when precipitation may occur. |
 | **Measurements** | Wind, humidity, UV, solar events, pressure, visibility and optional air/pollen data. |
-| **Past rain / Radar** | Recent observed precipitation, with radar coverage information. |
-| **Upcoming weather** | Model forecast maps for precipitation, temperature and clouds. |
+| **Radar** | Rain nowcast from the past two hours into the next two hours, and the hourly wind forecast. |
+
+**Two rain sources and one wind source.** Auto uses the DWD German composite
+inside Germany and RainViewer elsewhere. Choose Auto, RainViewer or DWD in the
+Radar view. DWD shows the last two hours of observations and a two-hour nowcast
+in five-minute steps. RainViewer shows two hours of observations in ten-minute
+steps and has no nowcast. The Wind layer uses DWD ICON on a 2.5 km grid, hourly
+for the next twelve hours, and covers Germany.
+
+**One nowcast timeline.** The map opens at the present time and stays paused.
+Press Space to play forward from the present frame into the future forecast; it
+stops at the last frame. Left and Right step one frame at a time. DWD renders
+each radar frame separately, so a close zoom can take a few seconds to fill the
+timeline. The play button works as soon as the first frame appears: if only the
+present frame is ready, it waits and starts when the next frame arrives. The
+warm-up retries a frame that fails and renders several frames at the same time.
+Playback continues when more frames arrive.
+
+**Zoom follows the source.** The zoom buttons, and the plus and minus keys,
+reach level 10 with DWD in Germany, about 40 km across, which is close to the
+1 km radar resolution. RainViewer stops at level 7, because it does not publish
+closer radar tiles.
+
+**The card fits the page.** The popup ends after the hourly forecast on Weather
+and after the map on Radar. The daily forecast stays below the fold and scrolls
+into view. The available screen height caps the card, and an expanded legend can
+make the Radar card taller.
+
+**The wind map stays readable.** DWD draws the wind barbs at a fixed pixel size.
+OWEE requests them at the displayed map size, so each stroke keeps its full
+width. The basemap dims under the barbs, and the barbs are stored in white, so
+they stand out in every theme. A small badge shows the current city wind speed
+and direction while the wind layer is open.
+
+## Keyboard shortcuts
+
+These shortcuts work while the panel is open.
+
+| Key | Action |
+| --- | --- |
+| 1 | Weather tab |
+| 2 | Radar tab |
+| R | Radar with the rain layer |
+| W | Radar with the wind layer |
+| Space | Play or pause the animation |
+| Left / Right | Previous or next frame |
+| + / − | Zoom the radar in or out |
+
+The map keeps focus when you open it. Buttons and the timeline return focus to
+the map after a click, so Space, Left, Right, plus and minus always control the
+radar. When a text field has focus, keys type into the field instead of
+changing the tab.
+
+Press **Legend** below the timeline to show the colour scale in dBZ for rain,
+or the barb scale with speeds in metres per second for wind. The rain scale
+follows the DWD ranges.
 
 **The blue bars represent probability.** In the daily view, brighter blue means
 higher rain/snow chance, grey means zero, and an outline means no hourly data.
@@ -144,8 +198,8 @@ probability covers the hour ending at its timestamp; OWEE labels that interval.
 UTC periods, skipped hours are identified, and polar day/night are explicit.
 The daily rain axis stays 00:00–24:00 even when using system display formats.
 
-**Favorites are one click away.** Saved cities sit beside Weather and Maps.
-Click a city to view it immediately; Maps stays open when switching locations.
+**Favorites are one click away.** Saved cities sit beside Weather and Radar.
+Click a city to view it immediately; Radar stays open when switching locations.
 Scroll the strip for more cities or use Tab to reach them. The highlighted city
 is the one being viewed; the star marks the city used by the bar and notifications.
 
@@ -155,9 +209,11 @@ places close. **Use in bar**, beside the bar-city label, makes the viewed city p
 the bar and notifications.
 
 **Coverage is visible.** Radar coverage masks distinguish missing observations
-from dry conditions. Air and pollen vary by region; unavailable values do not
-become zero. Maps are opt-in, stop when hidden and explain projection limits
-near the poles. Forecast maps are model predictions, distinct from radar.
+from dry conditions. RainViewer supplies a coverage mask; the DWD composite
+covers Germany and shows no separate mask. Air and pollen vary by region;
+unavailable values do not become zero. The radar is opt-in, stops when hidden and
+explain projection limits near the poles. The rain nowcast combines two hours of
+observed frames with a two-hour forecast; the wind layer is a model forecast.
 
 **Notifications stay under your control.** Quiet hours and the daily summary
 follow the desktop clock; weather intervals follow the primary city's timezone.

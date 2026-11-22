@@ -1,15 +1,64 @@
 # OWEE 1.3.4
 
+## Readable wind map
+
+The wind map now dims the basemap under the barbs. DWD draws the barbs at a
+fixed pixel size, so OWEE requests them at the displayed map size instead of
+downscaling them. The strokes keep their full width, and OWEE repaints them in
+white so they stand out in every theme. A small badge shows the current city
+wind speed and direction.
+
+## Panel fits the page
+
+The popup now sizes itself to the active page instead of using one tall card.
+Weather ends after the hourly forecast, so the daily forecast begins below the
+fold. Radar ends after the map and its Legend button. The available screen
+height still caps the card, and an expanded legend can make the Radar card
+taller.
+
 ## Refresh beside Settings
 
 A manual refresh icon now sits beside Settings in the fixed panel header.
-It is accessible from Weather, Maps, Settings and the city picker, including
+It is accessible from Weather, Radar, Settings and the city picker, including
 when the content is scrolled. The same action is available through keyboard
 focus. It uses the existing weather worker and one-minute request limit, and
 is disabled while that worker is busy.
 
 The former Settings-only refresh button has moved to the header. Weather
 sources, preferences and the selected primary city are unchanged.
+
+## Radar playback at close zoom
+
+Close zoom levels show fewer radar frames, because DWD renders each frame on
+its own. The timeline now loads several frames at the same time and checks for
+new frames every three seconds. The map opens at the present observation and
+stays paused; Space plays forward, and playback continues when more frames
+arrive. The play button and the Space key answer as soon as the first frame
+appears. When only the present frame is ready, playback waits on it and starts
+at the next frame instead of staying disabled.
+
+Plus and minus change the radar zoom level. Radar controls return keyboard
+focus to the map, so Space, Left, Right, plus and minus always control the
+radar after a click on a zoom, layer, source or timeline control.
+
+## Radar legend and new shortcuts
+
+The radar no longer prints a forecast tag beside the time. A Legend button
+replaces the explanatory paragraph and shows the rain scale in dBZ, or the wind
+barb scale with speeds in metres per second. The source buttons explain
+themselves in tooltips, and the provider line below the map is gone.
+
+Press 1 for Weather and 2 for Radar. R selects rain and W selects wind. The F
+shortcut is removed.
+
+## Two-hour nowcast
+
+The DWD timeline now runs two hours each way in five-minute steps: two hours of
+observations and two hours of forecast. It holds 49 frames. The warm-up checks
+for new frames for up to three minutes at a close zoom. A frame that fails
+during the parallel warm-up is retried once with fewer requests. One cold load
+asks for about 50 frames, so the local request guard allows the larger burst
+that this timeline needs and never records a refused call as a missing frame.
 
 The incomplete endurance qualification documented for 1.3.0 remains incomplete;
 this update does not claim a new twelve-hour run.

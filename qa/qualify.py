@@ -59,6 +59,7 @@ def main():
                 ('runtime',[sys.executable,'-B','qa/runtime_qml.py','--expected-version',manifest['version'],'--log',str(out/'runtime.log')]),
                 ('ui',[sys.executable,'-B','qa/ui_layout/run.py','--output',str(out/'ui')]),
                 ('ui150',[sys.executable,'-B','qa/ui_layout/run.py','--output',str(out/'ui150'),'--scale','1.5']),
+                ('raster',[sys.executable,'-B','qa/ui_layout/run.py','--raster','--output',str(out/'raster')]),
                 ('search',[sys.executable,'-B','qa/city_search/run.py']),
                 ('drag',[sys.executable,'-B','qa/cards_drag/run.py']),
                 ('cities',[sys.executable,'-B','qa/city_list_tests.py']),

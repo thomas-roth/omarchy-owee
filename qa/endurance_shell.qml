@@ -48,7 +48,7 @@ ShellRoot {
         if(!loader.item || !loader.item.result.data || !loader.item.qaScope)return
         panel=loader.item;scope=panel.qaScope
         scope.parent=stage;scope.width=stage.width;scope.height=stage.height
-        require(!!panel.qaCards&&!!panel.qaRadar&&!!panel.qaForecast,"all production components instantiated")
+        require(!!panel.qaCards&&!!panel.qaRadar,"all production components instantiated")
         note("ready")
         begin();return
       }
@@ -81,7 +81,7 @@ ShellRoot {
       if(phase===4) {
         if(Date.now()-phaseSince<450)return
         panel.searching=false
-        panel.showPage("maps");panel.mapPage="radar"
+        panel.showMapLayer("rain")
         next(5);return
       }
       if(phase===5) {
@@ -94,31 +94,31 @@ ShellRoot {
       if(phase===6) {
         if(!Commons.Style.reduceMotion&&Date.now()-phaseSince<950)return
         if(!Commons.Style.reduceMotion)require(panel.qaRadar.frameIndex!==previousRadarFrame,"radar animation advances with local fixtures")
-        panel.mapPage="forecast"
-        require(!panel.qaRadar.playing&&!panel.qaRadar.active,"leaving radar stops playback")
+        panel.showMapLayer("wind")
+        require(!panel.qaRadar.playing&&panel.qaRadar.mapLayer==="wind","switching to wind stops playback")
         next(7);return
       }
       if(phase===7) {
-        if(panel.qaForecast.busy||!panel.qaForecast.imageReady||panel.qaForecast.frames.length<2)return
-        panel.qaForecast.step(1);next(8);return
+        if(panel.qaRadar.busy||!panel.qaRadar.imageReady||panel.qaRadar.frames.length<2)return
+        panel.qaRadar.step(1);next(8);return
       }
       if(phase===8) {
-        if(panel.qaForecast.busy||!panel.qaForecast.imageReady)return
-        panel.qaForecast.togglePlayback();next(9);return
+        if(panel.qaRadar.busy||!panel.qaRadar.imageReady)return
+        panel.qaRadar.togglePlayback();next(9);return
       }
       if(phase===9) {
-        if(panel.qaForecast.playing&&Date.now()-phaseSince<3100)return
+        if(panel.qaRadar.playing&&Date.now()-phaseSince<3100)return
         require(finite(scope),"navigation and measurements kept finite geometry")
         panel.close();scope.visible=false
-        require(!panel.qaRadar.active&&!panel.qaForecast.active&&!panel.qaCards.active,"closed panel deactivates all page work")
-        require(!panel.qaRadar.playing&&!panel.qaForecast.playing,"closed panel stops both animations")
+        require(!panel.qaRadar.active&&!panel.qaCards.active,"closed panel deactivates all page work")
+        require(!panel.qaRadar.playing,"closed panel stops both animations")
         require(!activeSky(scope),"closed panel stops the weather illustration")
         note("closed")
         next(10);return
       }
       if(phase===10) {
-        if((panel.loading||panel.searchInFlight||panel.qaRadar.busy||panel.qaForecast.busy)&&Date.now()-phaseSince<2500)return
-        require(!panel.loading&&!panel.searchInFlight&&!panel.qaRadar.busy&&!panel.qaForecast.busy,"closed panel settles every fixture worker")
+        if((panel.loading||panel.searchInFlight||panel.qaRadar.busy||panel.qaRadar.busy)&&Date.now()-phaseSince<2500)return
+        require(!panel.loading&&!panel.searchInFlight&&!panel.qaRadar.busy&&!panel.qaRadar.busy,"closed panel settles every fixture worker")
         note("cycle_complete",{closed:true})
         next(-1);return
       }

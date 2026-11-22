@@ -26,9 +26,8 @@ ShellRoot {
     Weather.Radar {
       id: radar; width: 432; active: true
       city: ({latitude:45.75,longitude:4.85,timezone:"Asia/Tokyo"})
-      onForecastRequested: suite.forecastRequests++
+      onWeatherRequested: suite.forecastRequests++
     }
-    Weather.ForecastMap { id: forecast; y: 700; width: 432; active: false }
     TestEvent { id: events }
   }
   Timer {
@@ -40,7 +39,7 @@ ShellRoot {
         if(step===0) {
           if(radar.busy||radar.coverageState!=="uncovered")return
           check(radar.frames.length===1,"transparent rain tiles preserve observations without implying dry weather")
-          check(radar.clockLabel==="City local time · Asia/Tokyo"&&radar.frameTime===fixtures.radarCityClock,"radar uses the city timezone")
+          check(radar.frameTime===fixtures.radarCityClock,"radar uses the city timezone")
           console.warn("QA_COVERAGE_OPAQUE_PASS: opaque mask means outside radar coverage")
           radar.radar=fixtures.clear;step++;return
         }
@@ -58,72 +57,63 @@ ShellRoot {
           check(radar.coverageState==="unknown","unverified coverage remains unknown despite valid opaque imagery")
           check(radar.localSource("https://example.invalid/mask.png")==="","remote image source is rejected")
           console.warn("QA_COVERAGE_UNKNOWN_PASS: partial and unverified masks remain unknown")
-          forecast.forecast=fixtures.forecast;step++;return
+          radar.radar=fixtures.fallback;step++;return
         }
         if(step===4) {
-          check(forecast.frameTime===fixtures.forecastCityClock,"forecast frame is formatted in Tokyo rather than desktop UTC")
-          check(forecast.frameClockLabel==="city local time · Asia/Tokyo","forecast names its city timezone")
-          check(forecast.dateTime(fixtures.forecast.run_time)===fixtures.radarCityClock&&forecast.runClockLabel==="city local time · Asia/Tokyo","model run is formatted in the city timezone")
-          console.warn("QA_COVERAGE_CITY_TIME_PASS: radar, forecast and model times use Tokyo independently of desktop UTC")
-          radar.radar=fixtures.fallback;forecast.forecast=fixtures.forecastFallback;step++;return
-        }
-        if(step===5) {
-          check(radar.frameTime===fixtures.radarDesktopClock&&radar.clockLabel==="Desktop local time","invalid local radar timestamp is explicitly desktop time")
-          check(forecast.frameTime===fixtures.forecastDesktopClock&&forecast.frameClockLabel==="desktop local time"&&forecast.runClockLabel==="desktop local time","invalid forecast local timestamps are explicitly desktop time")
+          check(radar.frameTime===fixtures.radarDesktopClock,"invalid local radar timestamp is explicitly desktop time")
+          console.warn("QA_COVERAGE_CITY_TIME_PASS: radar times use Tokyo independently of desktop UTC")
           radar.city={latitude:90,longitude:12,timezone:"Etc/GMT"}
           radar.radar=fixtures.polar
-          forecast.forecast=fixtures.polar
           step++;return
         }
-        if(step===6) {
+        if(step===5) {
           if(radar.busy)return
-          check(radar.projectionUnsupported&&forecast.projectionUnsupported,"both map projections report unsupported poles")
+          check(radar.projectionUnsupported,"map projection reports unsupported poles")
           check(radar.city.latitude===90&&radar.city.longitude===12&&radar.radar.latitude===90&&radar.radar.longitude===12,"selected polar point was not moved")
           var action=find(radar,"radar-forecast-cta")
           check(!!action&&action.visible&&action.text==="See weather forecast","polar fallback action points to numeric weather")
           check(events.mouseClick(action,action.width/2,action.height/2,Qt.LeftButton,Qt.NoModifier,1),"native fallback button receives a real click")
           check(forecastRequests===1,"fallback signal is emitted exactly once")
           console.warn("QA_COVERAGE_POLAR_PASS: unsupported projection keeps coordinates and emits native fallback action")
-          radar.active=false;radar.radar=fixtures.clear;forecast.forecast=fixtures.forecastReady
+          radar.active=false;radar.radar=fixtures.clear
+          step++;return
+        }
+        if(step===6) {
+          if(!radar.imageReady)return
+          radar.playing=true
+          radar.radar=fixtures.radarMissing
           step++;return
         }
         if(step===7) {
-          if(!radar.imageReady||!forecast.imageReady)return
-          radar.playing=true;forecast.playing=true
-          radar.radar=fixtures.radarMissing;forecast.forecast=fixtures.forecastMissing
+          if(!radar.imageError)return
+          check(!radar.imageReady,"missing files are never marked ready")
+          check(!radar.playing,"missing imagery stops playback")
+          check(radar.message.indexOf("unavailable")>=0,"missing imagery has explicit recovery message")
+          radar.radar=fixtures.radarCorrupt
           step++;return
         }
         if(step===8) {
-          if(!radar.imageError||!forecast.imageError)return
-          check(!radar.imageReady&&!forecast.imageReady,"missing files are never marked ready")
-          check(!radar.playing&&!forecast.playing,"missing imagery stops playback")
-          check(radar.message.indexOf("unavailable")>=0&&forecast.message.indexOf("unavailable")>=0,"missing imagery has explicit recovery message")
-          radar.radar=fixtures.radarCorrupt;forecast.forecast=fixtures.forecastCorrupt
+          if(!radar.imageError)return
+          check(!radar.imageReady,"undecodable files are never marked ready")
+          radar.radar=fixtures.clear
           step++;return
         }
         if(step===9) {
-          if(!radar.imageError||!forecast.imageError)return
-          check(!radar.imageReady&&!forecast.imageReady,"undecodable files are never marked ready")
-          radar.radar=fixtures.clear;forecast.forecast=fixtures.forecastReady
+          if(!radar.imageReady)return
+          console.warn("QA_COVERAGE_IMAGES_PASS: missing and corrupted images stop playback; valid imagery recovers")
+          radar.city={latitude:44,longitude:12};radar.active=true
           step++;return
         }
         if(step===10) {
-          if(!radar.imageReady||!forecast.imageReady)return
-          console.warn("QA_COVERAGE_IMAGES_PASS: missing and corrupted images stop playback; valid imagery recovers")
-          radar.city={latitude:44,longitude:12};radar.active=true
-          forecast.city={latitude:44,longitude:12};forecast.active=true
+          if(radar.busy)return
+          check(radar.message.indexOf("timed out")>=0,"silent map workers are terminated with explicit timeout")
+          check(!radar.playing,"watchdog stops playback")
+          radar.city={latitude:45.75,longitude:4.85}
           step++;return
         }
         if(step===11) {
-          if(radar.busy||forecast.busy)return
-          check(radar.message.indexOf("timed out")>=0&&forecast.message.indexOf("timed out")>=0,"silent map workers are terminated with explicit timeout")
-          check(!radar.playing&&!forecast.playing,"watchdog stops playback")
-          radar.city={latitude:45.75,longitude:4.85};forecast.city={latitude:45.75,longitude:4.85}
-          step++;return
-        }
-        if(step===12) {
-          if(radar.busy||forecast.busy||!radar.imageReady||!forecast.imageReady)return
-          check(radar.message===""&&forecast.message==="","both maps recover after a worker timeout")
+          if(radar.busy||!radar.imageReady)return
+          check(radar.message==="","maps recover after a worker timeout")
           console.warn("QA_COVERAGE_WATCHDOG_PASS: silent workers terminate and a subsequent request recovers")
           console.warn("QA_COVERAGE_PASS: masks, image faults, watchdogs, projection limits, local clocks and fallback action")
           Qt.quit()

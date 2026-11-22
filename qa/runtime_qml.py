@@ -69,12 +69,7 @@ def main():
         stub = "#!/usr/bin/env python3\nimport json\nprint(" + repr(json.dumps(data, ensure_ascii=False)) + ")\n"
         (plugin / "weather.py").write_text(stub)
         # Avoid radar/network and preference effects if the new component exists.
-        (plugin / "radar.py").write_text("#!/usr/bin/env python3\nprint('{\"settings\":{\"enabled\":false,\"zoom\":6},\"frames\":[]}')\n")
-        forecast_calls = base / "forecast-calls.jsonl"
-        (plugin / "forecast_map.py").write_text(
-            "#!/usr/bin/env python3\nimport json,sys\n"
-            + "with open(" + repr(str(forecast_calls)) + ", 'a') as log: log.write(json.dumps(sys.argv[1:])+'\\n')\n"
-            + "print('{\"settings\":{\"enabled\":false,\"zoom\":6,\"layer\":\"precipitation\"},\"frames\":[]}')\n")
+        (plugin / "radar.py").write_text("#!/usr/bin/env python3\nprint('{\"settings\":{\"enabled\":false,\"zoom\":6,\"layer\":\"rain\"},\"frames\":[]}')\n")
         panel = plugin / "Panel.qml"
         qml = panel.read_text()
         qml = qml.replace('  manageIpc: false', '  manageIpc: false\n  readonly property var qaPopupContent: popup.loadedContent', 1)
@@ -87,10 +82,14 @@ def main():
             # Disposable hook: reach the real embedded editor inside lazy popup content.
             qml = qml.replace('  manageIpc: false', '  manageIpc: false\n  property var qaCards: null', 1)
             qml = qml.replace('          WeatherCards {', '          WeatherCards {\n            id: qaEmbeddedCards\n            Component.onCompleted: root.qaCards = qaEmbeddedCards', 1)
-        has_forecast = (plugin / "ForecastMap.qml").exists()
-        if has_forecast:
-            qml = qml.replace('  manageIpc: false', '  manageIpc: false\n  property var qaForecast: null', 1)
-            qml = qml.replace('          ForecastMap {', '          ForecastMap {\n            id: qaEmbeddedForecast\n            Component.onCompleted: root.qaForecast = qaEmbeddedForecast', 1)
+        has_radar = (plugin / "Radar.qml").exists()
+        if has_radar:
+            qml = qml.replace('  manageIpc: false', '  manageIpc: false\n  property var qaRadar: null', 1)
+            radar_marker = '            Radar {\n              id: radarPanel'
+            if radar_marker not in qml:
+                raise RuntimeError("Radar integration seam changed; review smoke harness")
+            qml = qml.replace(radar_marker,
+                              '            Radar {\n              id: radarPanel\n              Component.onCompleted: root.qaRadar = radarPanel', 1)
         panel.write_text(qml)
         optional = ""
         checks = '''
@@ -140,14 +139,23 @@ def main():
       console.error("QA_FAIL: primary city and consulted city mixed", p.cityName, p.label); Qt.exit(1); return
     }
     console.warn("QA_PRIMARY_PASS: Paris panel 22°C and Lyon bar 3°C remain separate")
-'''
-        if has_forecast:
-            checks += '''
-    if (!p.qaForecast || p.qaForecast.city.name !== "Paris" || p.qaForecast.active !== false
-        || p.qaForecast.forecastEnabled !== false || p.qaForecast.settingsLoaded !== true) {
-      console.error("QA_FAIL: forecast map did not receive the consulted city or is active while popup closed"); Qt.exit(1); return
+    p.showPage("radar")
+    p.showMapLayer("rain")
+    if (p.activePage !== "radar" || !p.qaRadar || p.qaRadar.mapLayer !== "rain") {
+      console.error("QA_FAIL: map layer helper did not open rain", p.activePage, p.qaRadar ? p.qaRadar.mapLayer : null); Qt.exit(1); return
     }
-    console.warn("QA_FORECAST_PASS: forecast map loaded for Paris and inactive while popup closed")
+    p.showMapLayer("wind")
+    if (p.qaRadar.mapLayer !== "wind") {
+      console.error("QA_FAIL: map layer helper did not switch to wind", p.qaRadar.mapLayer); Qt.exit(1); return
+    }
+    p.showPage("weather")
+    if (p.activePage !== "weather" || p.qaRadar.mapLayer !== "wind") {
+      console.error("QA_FAIL: weather tab helper did not keep the map layer", p.activePage, p.qaRadar.mapLayer); Qt.exit(1); return
+    }
+    if (p.qaRadar.active !== false || p.qaRadar.settingsLoaded !== true) {
+      console.error("QA_FAIL: radar panel active state or settings load"); Qt.exit(1); return
+    }
+    console.warn("QA_PAGE_TABS_PASS: page and map layer helpers keep state and focus")
 '''
         if (plugin / "NotificationSettings.qml").exists():
             optional += '''
@@ -300,12 +308,6 @@ ShellRoot {
         verification_notes = ["QA_VERSION_PASS: " + version]
         errors = [line for line in proc.stdout.splitlines() if any(token in line for token in
                   ("WARN scene:", "ERROR", "QA_FAIL"))]
-        if has_forecast:
-            calls = [json.loads(line) for line in forecast_calls.read_text().splitlines()] if forecast_calls.exists() else []
-            if not calls or any(not call or call[0] != "settings" for call in calls):
-                errors.append("QA_FAIL: disabled/closed forecast map attempted an action other than settings: " + repr(calls))
-            else:
-                verification_notes.append("QA_FORECAST_NETWORK_PASS: disabled map only read settings; no download action")
         args.log.write_text(proc.stdout + "\n".join(verification_notes) + "\n")
         for note in verification_notes:
             print(note)

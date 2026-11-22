@@ -28,12 +28,11 @@ CARD_INFO = {
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--radar-fixture", type=Path, help="Existing radar JSON with local tile URLs; no network")
-    parser.add_argument("--forecast-fixture", type=Path, help="Existing forecast map JSON with local image URLs; no network")
     parser.add_argument("--plugin", type=Path, default=ROOT)
-    parser.add_argument("--only", action="append", choices=["NotificationSettings", "Radar", "CityList", "WeatherCards", "WeatherCards-edit", "ForecastMap", "ForecastMap-disabled", "ForecastMap-legend"], help="Render only selected controls; repeatable")
+    parser.add_argument("--only", action="append", choices=["NotificationSettings", "Radar", "CityList", "WeatherCards", "WeatherCards-edit"], help="Render only selected controls; repeatable")
     args = parser.parse_args()
     source = args.plugin
-    controls = args.only or ["NotificationSettings", "Radar", "CityList", "WeatherCards", "WeatherCards-edit", "ForecastMap", "ForecastMap-disabled"]
+    controls = args.only or ["NotificationSettings", "Radar", "CityList", "WeatherCards", "WeatherCards-edit"]
     data = fixture()
     for name in controls:
         component = name.partition("-")[0]
@@ -53,60 +52,19 @@ def main():
             tile = (base / "tile.svg").as_uri()
             radar = {"tiles": [{"left": 0, "top": 0, "source": tile}, {"left": 256, "top": 0, "source": tile}],
                      "frames": [{"time": 1794570000 + i * 600, "tiles": ["", ""]} for i in range(3)]}
+            radar["layer"] = "rain"
             if args.radar_fixture:
                 radar = json.loads(args.radar_fixture.read_text())
             (plugin / "radar.py").write_text("import json,sys\nprint(json.dumps(" + repr({"settings": {"enabled": True, "zoom": 6}}) + " if sys.argv[1] != 'load' else " + repr(radar) + "))\n")
-            stamp = int(time.time() // 3600 * 3600)
-            # Controlled visual fixture: this SVG tests layout, not forecast accuracy.
-            (base / "forecast-overlay.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="432" height="240"><defs><linearGradient id="f"><stop stop-color="#2b84d9" stop-opacity="0.1"/><stop offset="1" stop-color="#28b5bd" stop-opacity="0.8"/></linearGradient></defs><ellipse cx="235" cy="120" rx="160" ry="65" fill="url(#f)"/></svg>')
-            (base / "forecast-legend.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="260" height="54"><defs><linearGradient id="l"><stop stop-color="#c5e7f3"/><stop offset="0.5" stop-color="#28b5bd"/><stop offset="1" stop-color="#1f469b"/></linearGradient></defs><rect x="8" y="8" width="244" height="18" fill="url(#l)"/><g font-family="sans-serif" font-size="12" fill="#111"><text x="8" y="44">0</text><text x="115" y="44">5</text><text x="205" y="44">20 mm</text></g></svg>')
-            forecast_settings = {"enabled": name != "ForecastMap-disabled", "zoom": 6, "layer": "precipitation"}
-            overlay = (base / "forecast-overlay.svg").as_uri()
-            forecast = {"settings": forecast_settings, "title": "1-hour precipitation", "provider": "ECCC GeoMet",
-                        "model": "GDPS", "unit": "mm / 1 h", "resolution": "15 km", "updated": stamp, "run_time": stamp - 3600,
-                        "tiles": radar["tiles"], "layers": [{"id":"precipitation","title":"Precipitation"}, {"id":"temperature","title":"Temperature"}, {"id":"clouds","title":"Clouds"}],
-                        "legend": {"source": (base / "forecast-legend.svg").as_uri(), "width":260, "height":54, "caption":"Dominant precipitation type and amount over the preceding hour (mm)."},
-                        "frames": [{"time": stamp + 3 * 3600 * (index + 1), "images": [{"left":0,"top":0,"width":432,"height":240,"source":overlay}]} for index in range(8)]}
-            forecast["selected_time"] = forecast["frames"][0]["time"]
-            if args.forecast_fixture:
-                forecast = json.loads(args.forecast_fixture.read_text())
-                actual_settings = forecast.get("settings", {})
-                forecast_settings = {"enabled": name != "ForecastMap-disabled",
-                                     "zoom": actual_settings.get("zoom", 6),
-                                     "layer": actual_settings.get("layer", "precipitation")}
-                forecast["settings"] = forecast_settings
-            (plugin / "forecast_map.py").write_text("import json,sys\nprint(json.dumps(" + repr({"settings":forecast_settings}) + " if sys.argv[1] in ('settings','configure') else " + repr(forecast) + "))\n")
             if name == "NotificationSettings":
                 init = '''item.expanded = true; item.config = {enabled:true, rain:true, wind:true, uv:true, daily:true, quiet_enabled:true}; item.primaryCityName = "Lyon"'''
             elif name == "Radar":
                 init = '''item.city = {name:"Lyon",latitude:45.75,longitude:4.85}; item.active = true'''
-            elif component == "ForecastMap":
-                init = '''item.city = {name:"Paris",latitude:48.85,longitude:2.35}; item.active = true'''
-                if name.endswith("-legend"):
-                    init += "; item.legendExpanded = true"
             elif name == "CityList":
                 init = "item.cities = " + json.dumps(data["cities"], ensure_ascii=False) + "; item.currentCity = " + json.dumps(data["city"]) + "; item.primaryCity = " + json.dumps(data["primary_city"])
             else:
                 init = "item.order = " + json.dumps(CARD_IDS) + "; item.hidden = ['air','pollen']; item.active = true; item.editing = " + ("true" if name.endswith("-edit") else "false") + "; item.cardInfo = function(id) { var map = " + json.dumps(CARD_INFO, ensure_ascii=False) + "; return map[id] }"
             checks = ""
-            if component == "ForecastMap":
-                if name.endswith("-disabled"):
-                    checks = '''
-        if (!control.item.settingsLoaded || control.item.forecastEnabled || control.item.frames.length) {
-          console.error("QA_FAIL: disabled forecast map loaded data"); Qt.exit(1); return
-        }
-        console.warn("QA_FORECAST_DISABLED_PASS: consent panel only")
-'''
-                else:
-                    checks = '''
-        if (!control.item.settingsLoaded || !control.item.forecastEnabled || !control.item.imageReady || control.item.frames.length < 2) {
-          console.error("QA_FAIL: forecast map fixture did not load"); Qt.exit(1); return
-        }
-        if (control.item.currentImages.some(function(item) { return control.item.localSource(item.source) === "" })) {
-          console.error("QA_FAIL: forecast image source is not local"); Qt.exit(1); return
-        }
-        console.warn("QA_FORECAST_RENDER_PASS: future dates, aligned local images and provider visible")
-'''
             if component == "WeatherCards":
                 visible = CARD_IDS if name.endswith("-edit") else [key for key in CARD_IDS if key not in ("air", "pollen")]
                 checks = '''
@@ -149,9 +107,10 @@ ShellRoot {
         if (typeof control.item.step === "function" && control.item.frames.length > 1) {
           var r = control.item
           if (r.frames.length < 2) { console.error("QA_FAIL: radar frames not loaded"); Qt.exit(1); return }
+          r.frameIndex = Math.min(1, r.frames.length - 1)
           var previous = r.frameIndex
           r.step(-1)
-          if (r.frameIndex !== (previous - 1 + r.frames.length) % r.frames.length) {
+          if (r.frameIndex !== Math.max(0, previous - 1)) {
             console.error("QA_FAIL: radar previous-frame control"); Qt.exit(1); return
           }
           r.playing = true

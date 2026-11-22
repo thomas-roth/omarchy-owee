@@ -33,7 +33,7 @@ def prepare(base):
         if source.is_file() and source.suffix in (".qml", ".js", ".py", ".json"):
             shutil.copy2(source, plugin / source.name)
     # Exercise actual watchdog termination without extending the GUI suite by 50s.
-    for name in ("Radar.qml", "ForecastMap.qml"):
+    for name in ("Radar.qml",):
         text = (plugin / name).read_text()
         assert text.count("interval: 50000") == 1, "Production map watchdog must remain 50 seconds"
         (plugin / name).write_text(text.replace("interval: 50000", "interval: 1000"))
@@ -64,32 +64,18 @@ def prepare(base):
     unknown = radar("opaque", "unknown")
     fallback = radar("opaque", "unknown")
     fallback["frames"] = [{**frame, "local_time": "not-a-timestamp"}]
-    future = stamp + 3600
-    future_local = datetime.fromtimestamp(future, tokyo).isoformat(timespec="minutes")
-    forecast = {"run_time": stamp, "run_local_time": local, "timezone": "Asia/Tokyo",
-                "frames": [{"time": future, "local_time": future_local,
-                            "timezone": "Asia/Tokyo", "images": []}]}
-    forecast_fallback = {**forecast, "run_local_time": "not-a-timestamp",
-                         "frames": [{**forecast["frames"][0], "local_time": "not-a-timestamp"}]}
     missing = (base / "missing-after-backend-response.png").as_uri()
     (base / "corrupt.png").write_bytes(b"not a valid PNG")
     corrupt = (base / "corrupt.png").as_uri()
-    def forecast_image(source):
-        return {**forecast, "frames": [{"time": future + offset, "images": [
-            {"source": source, "left": 0, "top": 0, "width": 432, "height": 240}]} for offset in (0, 3600)]}
     radar_missing = {**clear, "frames": [{**frame, "tiles": [missing] * 2}]}
     radar_corrupt = {**clear, "frames": [{**frame, "tiles": [corrupt] * 2}]}
     polar = {"status": "unsupported", "reason": "projection_limit", "latitude": 90,
              "longitude": 12, "frames": [], "tiles": [], "coverage_tiles": [],
              "coverage_status": "unsupported"}
     fixtures = {"opaque": opaque, "clear": clear, "partial": partial, "unknown": unknown,
-                "fallback": fallback, "forecast": forecast, "forecastFallback": forecast_fallback,
-                "polar": polar, "radarMissing": radar_missing, "radarCorrupt": radar_corrupt,
-                "forecastMissing": forecast_image(missing), "forecastCorrupt": forecast_image(corrupt),
-                "forecastReady": forecast_image(pictures["clear"]), "radarCityClock": clock(stamp, tokyo),
-                "radarDesktopClock": clock(stamp, timezone.utc),
-                "forecastCityClock": clock(future, tokyo),
-                "forecastDesktopClock": clock(future, timezone.utc)}
+                "fallback": fallback, "polar": polar, "radarMissing": radar_missing,
+                "radarCorrupt": radar_corrupt, "radarCityClock": clock(stamp, tokyo),
+                "radarDesktopClock": clock(stamp, timezone.utc)}
     (plugin / "coverage-data.json").write_text(json.dumps(fixtures))
     (plugin / "radar.py").write_text('''import json,sys,time
 from pathlib import Path
@@ -99,16 +85,6 @@ if sys.argv[1]=="load":
     if city["latitude"]==44:time.sleep(30)
     output=data["polar"] if abs(city["latitude"])>85.05112878 else data["opaque"]
 else:output={"settings":{"enabled":True,"zoom":6}}
-print(json.dumps(output))
-''')
-    (plugin / "forecast_map.py").write_text('''import json,sys,time
-from pathlib import Path
-data=json.loads(Path(__file__).with_name("coverage-data.json").read_text())
-if sys.argv[1] in ("load","frame"):
-    city=json.loads(sys.argv[2])
-    if city["latitude"]==44:time.sleep(30)
-    output=data["forecastReady"]
-else:output={"settings":{"enabled":True,"zoom":6,"layer":"clouds"}}
 print(json.dumps(output))
 ''')
     (base / "shell.qml").write_text((HERE / "tst_coverage.qml").read_text().replace("@@FIXTURES@@", json.dumps(fixtures)))

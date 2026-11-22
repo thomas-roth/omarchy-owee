@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT / "qa"))
 from runtime_qml import fixture
 
 
-BACKEND = r'''import json,sys,time
+BACKEND = r'''import json,os,sys,time
 from pathlib import Path
 base=Path(__file__).parent
 name=Path(sys.argv[0]).stem
@@ -54,25 +54,25 @@ if name=='weather':
         data['primary']['city']=candidate
     state.write_text(json.dumps(data))
     print(json.dumps(data));sys.exit()
-settings={'enabled':True,'zoom':6}
-if name=='forecast_map':settings['layer']='precipitation'
+prefs=base/'radar-settings.json'
+settings={'enabled':True,'zoom':6,'layer':'rain','source':'auto'}
+if prefs.exists():settings.update(json.loads(prefs.read_text()))
+if action=='configure' and arg:settings.update(json.loads(arg))
+prefs.write_text(json.dumps(settings))
 if action in ('settings','configure'):
     print(json.dumps({'settings':settings}));sys.exit()
 tile=(base/'map.svg').as_uri()
 overlay=(base/'overlay.svg').as_uri()
 now=int(time.time())
-if name=='radar':
-    print(json.dumps({'width':432,'height':240,'tiles':[{'left':0,'top':0,'source':tile},{'left':256,'top':0,'source':tile}],
-      'frames':[{'time':now-1200+i*600,'tiles':[overlay,overlay]} for i in range(3)],'updated':now,'stale':False}));sys.exit()
-start=(now//3600+1)*3600
-times=[start+i*10800 for i in range(4)]
-selected=json.loads(arg)['time'] if action=='frame' else times[0]
-frames=[{'time':stamp,'images':[{'left':0,'top':0,'width':432,'height':240,'source':overlay}] if stamp==selected else []} for stamp in times]
-print(json.dumps({'settings':settings,'width':432,'height':240,'tiles':[{'left':0,'top':0,'source':tile},{'left':256,'top':0,'source':tile}],
- 'frames':frames,'selected_time':selected,'run_time':now-6*3600,'updated':now,'stale':False,
- 'title':'1-hour precipitation','unit':'mm / 1 h','model':'GDPS','provider':'ECCC GeoMet','resolution':'15 km',
- 'layers':[{'id':'precipitation','title':'Precipitation'},{'id':'temperature','title':'Temperature'},{'id':'clouds','title':'Clouds'}],
- 'legend':{'source':(base/'legend.svg').as_uri(),'width':260,'height':54,'caption':'Local test data'}}))
+if os.environ.get('QA_RADAR_RENDER')=='raster':
+    frame=(base/'assets/legend-rain.png').as_uri()
+    print(json.dumps({'width':432,'height':240,'layer':settings['layer'],'render':'raster',
+      'tiles':[{'left':0,'top':0,'source':tile},{'left':256,'top':0,'source':tile}],
+      'frames':[{'time':now-1200+i*600,'image':frame} for i in range(3)],
+      'default_index':2,'updated':now,'stale':False}))
+    sys.exit()
+print(json.dumps({'width':432,'height':240,'layer':'rain','tiles':[{'left':0,'top':0,'source':tile},{'left':256,'top':0,'source':tile}],
+  'frames':[{'time':now-1200+i*600,'tiles':[overlay,overlay]} for i in range(3)],'updated':now,'stale':False}))
 '''
 
 CONTAINER = '''import QtQuick
@@ -120,22 +120,21 @@ def prepare(base, plugin, output):
         weather_code=[2,61,3,0,71,45,2,3,61,0], temperature_2m_min=[3,4,1,-2,-1,0,2,3,4,3],
         temperature_2m_max=[12,10,9,5,4,6,8,11,12,10], precipitation_probability_max=[20,75,10,0,60,10,20,10,55,0])
     (destination / "fixture-state.json").write_text(json.dumps(data, ensure_ascii=False))
-    for name in ("weather.py", "radar.py", "forecast_map.py"):
+    for name in ("weather.py", "radar.py"):
         (destination / name).write_text(BACKEND)
     (destination / "map.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#e8efeb"/><path d="M0 150L256 30M80 0L220 256M0 90L256 200" stroke="#fff" stroke-width="12"/><path d="M0 240L256 50" stroke="#abd4e5" stroke-width="20"/></svg>')
     (destination / "overlay.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="432" height="240"><ellipse cx="235" cy="120" rx="150" ry="65" fill="#52a9d2" opacity="0.45"/></svg>')
-    (destination / "legend.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="260" height="54"><rect x="8" y="8" width="244" height="18" fill="#52a9d2"/><text x="8" y="44" font-size="12">0                  5                  20 mm</text></svg>')
     panel_path = destination / "Panel.qml"
     panel = panel_path.read_text()
     hook = ('  manageIpc: false\n'
             '  readonly property var qaScope: popup.loadedContent\n'
-            '  property var qaCards: null\n  property var qaRadar: null\n  property var qaForecast: null')
+            '  property var qaCards: null\n  property var qaRadar: null')
     panel = panel.replace("  manageIpc: false", hook, 1)
     panel = panel.replace("Component.onCompleted: root.refresh()", "Component.onCompleted: { root.refresh(); popup.ensureContent() }", 1)
     panel = panel.replace("    open: root.opened", "    open: false", 1)
     panel = panel.replace("  KeyboardPanel {", "  LayoutPanel {", 1)
     (destination / "LayoutPanel.qml").write_text(CONTAINER)
-    for component, property_name in (("WeatherCards", "qaCards"), ("Radar", "qaRadar"), ("ForecastMap", "qaForecast")):
+    for component, property_name in (("WeatherCards", "qaCards"), ("Radar", "qaRadar")):
         panel, count = re.subn(r"(?m)^(\s*)" + component + r"\s*\{", lambda m: m.group(0)+"\n"+m.group(1)+"  Component.onCompleted: root."+property_name+" = this", panel, count=1)
         if count != 1:
             raise RuntimeError(f"Missing {component} integration seam")
@@ -150,6 +149,7 @@ def main():
     parser.add_argument("--plugin", type=Path, default=ROOT)
     parser.add_argument("--output", type=Path, default=HERE)
     parser.add_argument("--scale", type=float, default=1)
+    parser.add_argument("--raster", action="store_true", help="Exercise the DWD raster frame path")
     args = parser.parse_args()
     if not 0.5 <= args.scale <= 3:
         parser.error("--scale must be between 0.5 and 3")
@@ -169,8 +169,10 @@ def main():
         env = os.environ.copy()
         env.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", QT_SCALE_FACTOR=str(args.scale),
                    XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"))
+        if args.raster:
+            env["QA_RADAR_RENDER"] = "raster"
         proc = subprocess.run(["timeout", "35s", "quickshell", "--no-color", "-p", str(base)], env=env,
-                              text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=40)
+                              text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=45)
         (args.output / "test.log").write_text(proc.stdout)
         print(proc.stdout, end="")
         trace_path = plugin / "backend-trace.jsonl"

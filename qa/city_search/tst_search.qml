@@ -12,6 +12,10 @@ ShellRoot {
   property var field: null
   property int step: 0
   property int checks: 0
+  // TestEvent delivers input through a nested event loop, so the repeat timer
+  // can fire again while a step is still running. Without this guard one
+  // step advances twice and skips the next one.
+  property bool qaBusy: false
   property double since: Date.now()
   property string output: @@OUTPUT@@
   function check(ok,label) {
@@ -55,6 +59,8 @@ ShellRoot {
   Timer {
     interval:50;repeat:true;running:true
     onTriggered: {
+      if(qaBusy)return
+      qaBusy=true
       try {
         if(step===0) {
           if(!loader.item||!loader.item.result.data||!loader.item.qaScope)return
@@ -150,6 +156,7 @@ ShellRoot {
           Qt.quit()
         }
       } catch(error) {console.error("QA_FAIL:",error.message);Qt.exit(1)}
+      finally {qaBusy=false}
     }
   }
 }

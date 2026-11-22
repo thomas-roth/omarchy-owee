@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 
+// owee.weather 1.4.0 — the version stamp backs the manifest integrity check.
 BarWidget {
   id: root
   moduleName: "owee.weather"
@@ -38,24 +39,22 @@ BarWidget {
     readonly property real nativeBearings: Math.max(0, Style.bar.statusSlot - Style.bar.iconCanvas)
     implicitWidth: vertical ? barSize : weatherContent.implicitWidth + nativeBearings
     implicitHeight: vertical ? weatherContent.implicitHeight + nativeBearings : barSize
-    tooltipText: "OWEE 1.3.4 · click to open"
+    tooltipText: loader.item ? loader.item.barTooltip : "Weather: —"
     Accessible.role: Accessible.Button
-    Accessible.name: "Weather: " + (loader.item ? loader.item.barTemperature : "—")
+    Accessible.name: loader.item ? loader.item.barTooltip : "Weather"
     Accessible.onPressAction: if (loader.item) loader.item.toggle()
     Item {
       id: weatherContent
       anchors.centerIn: parent
-      readonly property real gap: Style.space(4)
-      implicitWidth: button.vertical ? Math.max(optical.width, temperature.implicitWidth) : optical.width + gap + temperature.implicitWidth
-      implicitHeight: button.vertical ? optical.height + gap + temperature.implicitHeight : Math.max(optical.height, temperature.implicitHeight)
+      implicitWidth: optical.width
+      implicitHeight: optical.height
       width: implicitWidth
       height: implicitHeight
       scale: button.pressScale
       BarIconContent {
         id: optical
         objectName: "weather-bar-optical"
-        x: button.vertical ? (parent.width - width) / 2 : 0
-        y: button.vertical ? 0 : (parent.height - height) / 2
+        anchors.centerIn: parent
         width: Style.bar.iconCanvas; height: width
         sourceSize: Style.bar.iconCanvas
         sourceComponent: Component {
@@ -66,18 +65,6 @@ BarWidget {
             ink: button.foreground
           }
         }
-      }
-      PText {
-        id: temperature
-        objectName: "weather-bar-temperature"
-        width: implicitWidth
-        height: implicitHeight
-        x: button.vertical ? (parent.width - width) / 2 : optical.width + weatherContent.gap
-        y: button.vertical ? optical.height + weatherContent.gap : (parent.height - height) / 2
-        text: loader.item ? loader.item.barTemperature : "—"
-        font.family: button.fontFamily
-        font.pixelSize: Style.bar.iconFont
-        color: button.foreground
       }
     }
     onPressed: function(b) { if (loader.item) { if (b === Qt.MiddleButton) loader.item.refresh(); else loader.item.toggle() } }

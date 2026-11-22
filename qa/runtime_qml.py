@@ -69,7 +69,7 @@ def main():
         stub = "#!/usr/bin/env python3\nimport json\nprint(" + repr(json.dumps(data, ensure_ascii=False)) + ")\n"
         (plugin / "weather.py").write_text(stub)
         # Avoid radar/network and preference effects if the new component exists.
-        (plugin / "radar.py").write_text("#!/usr/bin/env python3\nprint('{\"settings\":{\"enabled\":false,\"zoom\":6},\"frames\":[]}')\n")
+        (plugin / "radar.py").write_text("#!/usr/bin/env python3\nprint('{\"settings\":{\"rain_enabled\":false,\"wind_enabled\":false,\"zoom_level\":1},\"rain\":{\"frames\":[]},\"wind\":{\"frames\":[]}}')\n")
         forecast_calls = base / "forecast-calls.jsonl"
         (plugin / "forecast_map.py").write_text(
             "#!/usr/bin/env python3\nimport json,sys\n"
@@ -106,34 +106,24 @@ def main():
     var temperature = findNamed(barLoader.item, "weather-bar-temperature")
     var button = findNamed(barLoader.item, "weather-bar-button")
     var optical = findNamed(barLoader.item, "weather-bar-optical")
-    if (!icon || icon.code !== 0 || !icon.night || !temperature || temperature.text !== "3°"
+    if (!icon || icon.code !== 0 || !icon.night || temperature
         || !button || !optical || Math.abs(Math.max(optical.paintedWidth, optical.paintedHeight) - Commons.Style.bar.iconSize) > 0.1
-        || Math.abs(button.implicitWidth - (Commons.Style.bar.statusSlot + Commons.Style.space(4) + temperature.implicitWidth)) > 0.1
-        || button.implicitHeight !== Commons.Style.bar.sizeHorizontal) {
-      console.error("QA_FAIL: bar icon, primary city or measured width", icon ? icon.code : null, icon ? icon.night : null,
+        || Math.abs(button.implicitWidth - Commons.Style.bar.statusSlot) > 0.1
+        || button.implicitHeight !== Commons.Style.bar.sizeHorizontal
+        || button.tooltipText !== "Weather: 3°C, feels 1°C") {
+      console.error("QA_FAIL: bar icon, tooltip or measured width", icon ? icon.code : null, icon ? icon.night : null,
                     temperature ? temperature.text : null, button ? button.implicitWidth : null,
-                    button ? button.implicitHeight : null, temperature ? temperature.implicitWidth : null,
+                    button ? button.implicitHeight : null, button ? button.tooltipText : null,
                     optical ? optical.paintedWidth : null, optical ? optical.paintedHeight : null,
                     Commons.Style.bar.iconSize, Commons.Style.bar.statusSlot, Commons.Style.bar.sizeHorizontal); Qt.exit(1); return
     }
-    console.warn("QA_BAR_PASS: native button, night icon and measured temperature layout")
-    var initialTemperature = temperature.text
-    var samples = ["—", "-12°", "100°"]
-    for (var sample = 0; sample < samples.length; sample++) {
-      temperature.text = samples[sample]
-      var expectedWidth = Commons.Style.bar.statusSlot + Commons.Style.space(4) + temperature.implicitWidth
-      if (Math.abs(button.implicitWidth - expectedWidth) > 0.1 || temperature.width < temperature.implicitWidth) {
-        console.error("QA_FAIL: temperature resize clips or changes native bearings"); Qt.exit(1); return
-      }
-    }
-    temperature.text = initialTemperature
-    console.warn("QA_BAR_RESIZE_PASS: missing, negative and three-digit temperatures preserve native spacing")
+    console.warn("QA_BAR_PASS: native button, night icon, tooltip with felt temperature and icon-only layout")
     button.bar = verticalBar
     Qt.callLater(function() {
-      if (!button.vertical || button.implicitWidth !== 32 || button.implicitHeight < optical.height + temperature.implicitHeight) {
+      if (!button.vertical || button.implicitWidth !== 32 || button.implicitHeight < optical.height) {
         console.error("QA_FAIL: vertical bar layout"); Qt.exit(1); return
       }
-      console.warn("QA_BAR_VERTICAL_PASS: icon and temperature stacked in native button")
+      console.warn("QA_BAR_VERTICAL_PASS: icon stacked in native button")
     })
     if (p.cityName !== "Paris" || p.current.temperature_2m !== 22 || p.primaryCityName !== "Lyon"
         || p.primaryCurrent.temperature_2m !== 3 || p.label !== "☾ 3°") {

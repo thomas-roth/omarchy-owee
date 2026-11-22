@@ -38,20 +38,24 @@ class ProductionMapTests(unittest.TestCase):
                     + table + chunk(b"IDAT", zlib.compress(b"\x00\x00")) + chunk(b"IEND", b""))
             self.assertEqual(image_validation.png_size(data), (1, 1))
 
-    def test_coverage_cache_survives_two_days_and_current_results_survive_pressure(self):
+    def test_radar_cache_expires_but_serves_offline_until_pruned(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(radar, "CACHE", Path(directory)):
-            url = radar.RADAR_HOST + "/v2/coverage/0/256/6/32/32/0/0_0.png"
-            path = Path(directory) / "coverage-" / (hashlib.sha256(url.encode()).hexdigest() + ".png")
+            url = radar.RADAR_HOST + "/v2/radar/sample/512/6/32/32/2/1_0.png"
+            path = Path(directory) / "radar-" / (hashlib.sha256(url.encode()).hexdigest() + ".png")
             radar.save_bytes(path, png())
             os.utime(path, (time.time() - 2 * 86400,) * 2)
             self.assertEqual(radar.tile(url, network=False), path.as_uri())
             radar.prune_cache()
-            self.assertTrue(path.exists())
-            with patch.object(radar, "MAX_CACHE_BYTES", 1):
-                radar.prune_cache({path})
-                self.assertTrue(path.exists())
-                radar.prune_cache()
-                self.assertFalse(path.exists())
+            self.assertFalse(path.exists())
+        with tempfile.TemporaryDirectory() as directory, patch.object(radar, "CACHE", Path(directory)):
+            fresh = Path(directory) / "radar-" / "fresh.png"
+            base = Path(directory) / "osm-" / "base.png"
+            radar.save_bytes(fresh, png())
+            radar.save_bytes(base, png())
+            with patch.object(radar, "MAX_CACHE_BYTES", len(png()) + 1):
+                radar.prune_cache({base})
+                self.assertTrue(base.exists())
+                self.assertFalse(fresh.exists())
 
     def test_slow_drip_shares_the_total_budget_instead_of_resetting_socket_timeout(self):
         clock = [0.0]
@@ -60,10 +64,12 @@ class ProductionMapTests(unittest.TestCase):
                 clock[0] += 2
                 return b"x"
             read = read1
-        with patch.object(radar.time, "monotonic", side_effect=lambda: clock[0]), radar.request_budget():
+        with patch.object(radar.time, "monotonic", side_effect=lambda: clock[0]), \
+                patch.object(radar, "REQUEST_SECONDS", 4), radar.request_budget():
+            budget = radar.REQUEST_SECONDS
             with self.assertRaises(TimeoutError):
                 radar.read_response(SlowResponse(), 100)
-        self.assertEqual(clock[0], radar.REQUEST_SECONDS)
+        self.assertEqual(clock[0], budget)
 
     def test_cli_deadline_stops_a_completely_stalled_request_with_valid_json(self):
         code = ("import radar,time;radar.REQUEST_SECONDS=0.1;"

@@ -66,11 +66,11 @@ ShellRoot {
     check(JSON.stringify(p.primaryCity)===primaryBefore&&p.barTemperature===barBefore,"favorite navigation preserves primary city and bar temperature")
   }
   function geometry() {
-    var nav=find(scope,"nav-maps")
+    var nav=find(scope,"nav-radars")
     var origin=favorites.mapToItem(stage,0,0)
     var maps=nav.mapToItem(stage,0,0)
     check(isFinite(favorites.width)&&isFinite(favorites.height)&&favorites.width>=0&&favorites.height>=0,"favorite strip has finite geometry")
-    check(origin.x>=maps.x+nav.width-0.5&&Math.abs(origin.y-maps.y)<4,"favorites sit directly beside fixed Weather and Maps controls")
+    check(origin.x>=maps.x+nav.width-0.5&&Math.abs(origin.y-maps.y)<4,"favorites sit directly beside fixed Weather and Radars controls")
     check(origin.x+favorites.width<=stage.width+0.5,"favorite overflow stays inside panel width")
   }
   function plainLabels(item) {
@@ -135,7 +135,7 @@ ShellRoot {
           primaryPreserved()
           click(chip(0))
           check(!p.loading&&!p.pendingActions.length,"clicking current favorite starts no request")
-          click(find(scope,"nav-maps"));click(chip(1))
+          click(find(scope,"nav-radars"));click(chip(1))
           advance(3);return
         }
         if (step===3) {
@@ -194,7 +194,7 @@ ShellRoot {
           if(Date.now()-since<200)return
           check(!chip(0),"empty favorite list removes delegates")
           check(isFinite(favorites.width)&&isFinite(favorites.height)&&favorites.width>=0&&favorites.height>=0,"empty list retains finite geometry")
-          var weather=find(scope,"nav-weather"),maps=find(scope,"nav-maps")
+          var weather=find(scope,"nav-weather"),maps=find(scope,"nav-radars")
           check(weather.visible&&maps.visible&&weather.width>0&&maps.width>0,"empty list preserves fixed navigation")
           console.warn("QA_FAVORITE_CITIES_PASS",checks)
           finish(0)

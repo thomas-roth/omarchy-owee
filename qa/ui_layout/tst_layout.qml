@@ -19,6 +19,9 @@ ShellRoot {
   property var previousChart: null
   property real previousX: 0
   property real previousY: 0
+  property real radarPopupHeight: 0
+  property real legendHiddenHeight: 0
+  property var retry: null
   property string output: @@OUTPUT@@
   function check(ok, message) {
     if (!ok) throw new Error("QA_FAIL: " + message)
@@ -31,6 +34,20 @@ ShellRoot {
     for (var i=0; item.children && i<item.children.length; i++) {
       var found=find(item.children[i],name)
       if (found) return found
+    }
+    return null
+  }
+  function findAny(item, name) {
+    // Timers and other non-visual QML objects live in `data`, not `children`.
+    if (!item) return null
+    if (item.objectName === name) return item
+    for (var i=0; item.children && i<item.children.length; i++) {
+      var found=findAny(item.children[i],name)
+      if (found) return found
+    }
+    for (var j=0; item.data && j<item.data.length; j++) {
+      var foundData=findAny(item.data[j],name)
+      if (foundData) return foundData
     }
     return null
   }
@@ -167,10 +184,10 @@ ShellRoot {
           check(p.activePage==="weather","opening lands on Weather")
           check(p.opened,"test panel lifecycle open")
           check(!!viewport&&!!hourly&&!!daily,"forecast sections available")
-          check(!p.qaRadar.active&&!p.qaForecast.active,"maps inactive on weather page")
+          check(!p.qaRadar.active,"maps inactive on weather page")
           check(p.cityName==="Paris"&&p.primaryCityName==="Lyon"&&p.barTemperature==="3°","consulted and primary cities remain separate")
           check(hourly.samples.length===24&&daily.days.length===10,"24 hours and 10 days remain available")
-          check(hasText(scope,"Weather")&&hasText(scope,"Maps")&&p.description(3)==="Overcast","English navigation and weather conditions")
+          check(hasText(scope,"Weather")&&hasText(scope,"Radars")&&p.description(3)==="Overcast","English navigation and weather conditions")
           check(daily.days[0].label==="Today"&&p.date("2026-11-16")==="Mon","English day names independent of desktop language")
           check(daily.days[1].label==="Tomorrow"&&hasText(daily,"Low 3°C")&&hasText(daily,"High 12°C"),"daily forecast explains days and temperature bounds")
           check(hasText(daily,"00:00")&&hasText(daily,"12:00")&&hasText(daily,"24:00")&&hasText(daily,"Rain / snow chance by hour · city local time"),"daily timeline names local hours and midnight endpoints")
@@ -248,22 +265,123 @@ ShellRoot {
           timeline.selectedHour=-1;timeline.focus=false;scope.forceActiveFocus()
           viewport.contentY=Math.min(viewport.contentHeight-viewport.height,daily.mapToItem(viewport,0,0).y+viewport.contentY)
           step=400
-          capture("daily",function(){click(find(scope,"nav-maps"));step=5})
+          capture("daily",function(){click(find(scope,"nav-radars"));step=5})
           return
         }
         if(step===5) {
-          check(p.activePage==="maps"&&p.mapPage==="radar","Maps opens radar view")
-          check(find(scope,"refresh-weather").visible,"manual refresh remains visible on Maps")
-          check(p.qaRadar.active&&!p.qaForecast.active,"only radar active in radar view")
+          if(p.qaRadar.busy||p.qaRadar.frameCount===0)return
+          check(p.activePage==="maps"&&p.mapPage==="rain","Radars opens the rain radar")
+          check(find(scope,"refresh-weather").visible,"manual refresh remains visible on Radars")
+          check(p.qaRadar.active,"only the radar is active in radar view")
+          check(p.qaRadar.mode==="rain"&&p.qaRadar.frameCount===49&&p.qaRadar.nowIndex===24,"rain timeline spans past and future frames")
+          check(p.qaRadar.frameIndex===24&&p.qaRadar.imageReady,"timeline opens on the newest observation")
+          check(p.qaRadar.frameLead==="now"||p.qaRadar.frameLead.indexOf("min")>=0,"frames show their distance from now")
           check(viewport.contentY===0,"navigation resets scroll")
-          capture("maps-radar", function(){click(find(scope,"map-forecast"))});step++;return
+          p.qaRadar.forceActiveFocus()
+          check(events.keyClick(Qt.Key_Space,Qt.NoModifier,1)&&p.qaRadar.playing,"space starts radar playback")
+          check(events.keyClick(Qt.Key_Right,Qt.NoModifier,1)&&!p.qaRadar.playing&&p.qaRadar.frameIndex===25,"right arrow steps one frame and pauses")
+          check(events.keyClick(Qt.Key_Left,Qt.NoModifier,1)&&p.qaRadar.frameIndex===24,"left arrow steps back one frame")
+          check(events.keyClick(Qt.Key_Plus,Qt.NoModifier,1)&&p.qaRadar.zoomLevel===2,"plus zooms in")
+          check(!find(p.qaRadar,"radar-legend").visible,"popup opens with the legend hidden")
+          suite.legendHiddenHeight=p.popupContentHeight
+          click(findButton(p.qaRadar,"Legend"))
+          step=45
+          return
+        }
+        if(step===45) {
+          if(p.qaRadar.busy)return
+          var legend=find(p.qaRadar,"radar-legend")
+          check(!!legend&&legend.visible,"legend toggle shows the colour scale")
+          check(hasText(legend,"15 – 30 mm/h")&&hasText(legend,"over 150 mm/h"),"rain legend names real mm/h boundaries")
+          check(p.popupContentHeight>suite.legendHiddenHeight,"showing the legend grows the popup so radar and timeline stay fully visible")
+          check(p.popupContentHeight>0&&p.popupContentHeight<Commons.Style.space(760),"maps page fits the popup to its content instead of the weather height")
+          suite.radarPopupHeight=p.popupContentHeight
+          click(findButton(p.qaRadar,"Legend"))
+          step=40
+          return
+        }
+        if(step===40) {
+          if(p.qaRadar.busy)return
+          check(p.qaRadar.zoomLevel===2,"zoom preference applied by the backend")
+          check(events.keyClick(Qt.Key_Minus,Qt.NoModifier,1)&&p.qaRadar.zoomLevel===1,"minus zooms out")
+          step=400
+          return
+        }
+        if(step===400) {
+          if(p.qaRadar.busy)return
+          check(!find(p.qaRadar,"radar-legend").visible,"legend toggle hides the colour scale")
+          check(p.popupContentHeight<suite.radarPopupHeight,"hiding the legend shrinks the popup below the toggle row")
+          findButton(p.qaRadar,"Legend").forceActiveFocus()
+          check(events.keyClick(Qt.Key_Space,Qt.NoModifier,1)&&p.qaRadar.playing,"space plays even when a radar button holds focus")
+          check(events.keyClick(Qt.Key_Space,Qt.NoModifier,1)&&!p.qaRadar.playing,"space pauses again from the focused button")
+          check(!find(p.qaRadar,"radar-legend").visible,"space does not activate the focused legend button")
+          step=401
+          return
+        }
+        if(step===401) {
+          if(p.qaRadar.busy)return
+          click(findButton(p.qaRadar,"Legend"))
+          step=402
+          return
+        }
+        if(step===402) {
+          if(p.qaRadar.busy)return
+          check(find(p.qaRadar,"radar-legend").visible,"legend toggle shows the colour scale again")
+          check(Math.abs(p.popupContentHeight-suite.radarPopupHeight)<1,"showing the legend restores the fitted height")
+          var retry=findAny(p.qaRadar,"radar-partial-retry")
+          check(!!retry&&!retry.running,"a complete load schedules no retry")
+          p.qaRadar.schedulePartialRetry()
+          check(retry.running,"a partial load schedules a completion retry")
+          check(p.qaRadar.retryCredits===3,"scheduling spends no retry credit")
+          retry.stop()
+          p.qaRadar.retryCredits=0
+          p.qaRadar.schedulePartialRetry()
+          check(!retry.running,"exhausted retry credits stop the retries")
+          p.qaRadar.retryCredits=2
+          suite.retry=retry
+          step=403
+          return
+        }
+        if(step===403) {
+          if(p.qaRadar.busy)return
+          p.qaRadar.handleLine(JSON.stringify({kind:"done",partial:false,message:""}))
+          check(p.qaRadar.retryCredits===3,"a complete load restores the retry credits")
+          check(!suite.retry.running,"a complete load stops the retry timer")
+          step=41
+          return
+        }
+        if(step===41) {
+          if(p.qaRadar.busy)return
+          p.qaRadar.forceActiveFocus()
+          check(events.keyClick(Qt.Key_1,Qt.NoModifier,1)&&p.activePage==="weather","1 switches to the weather register")
+          check(events.keyClick(Qt.Key_2,Qt.NoModifier,1)&&p.activePage==="maps","2 switches to the radars register")
+          check(events.keyClick(Qt.Key_W,Qt.NoModifier,1)&&p.mapPage==="wind","W switches to the wind radar")
+          check(events.keyClick(Qt.Key_R,Qt.NoModifier,1)&&p.mapPage==="rain","R switches to the rain radar")
+          p.qaRadar.legendVisible=false
+          check(events.keyClick(Qt.Key_L,Qt.NoModifier,1)&&find(p.qaRadar,"radar-legend").visible,"L shows the legend")
+          check(events.keyClick(Qt.Key_L,Qt.NoModifier,1)&&!find(p.qaRadar,"radar-legend").visible,"L hides the legend again")
+          capture("maps-radar", function(){click(find(scope,"map-wind"))});step=42
+          return
+        }
+        if(step===42) {
+          if(p.qaRadar.busy||p.qaRadar.mode!=="wind"||p.qaRadar.frameCount===0)return
+          check(p.qaRadar.active&&p.qaRadar.mode==="wind","wind view shares the radar")
+          check(p.qaRadar.frameCount===17&&p.qaRadar.nowIndex===8,"wind timeline spans past and future frames")
+          check(p.qaRadar.frameLead==="now","the wind timeline opens on a frame that reads now, not -10 min")
+          check(findCanvas(p.qaRadar),"wind map draws an animated vector field")
+          p.qaRadar.forceActiveFocus()
+          check(events.keyClick(Qt.Key_Space,Qt.NoModifier,1)&&p.qaRadar.playing,"space plays the wind frames too")
+          events.keyClick(Qt.Key_Space,Qt.NoModifier,1)
+          capture("maps-wind", function(){click(find(scope,"nav-settings"))});step=6
+          return
         }
         if(step===6) {
-          check(p.mapPage==="forecast"&&!p.qaRadar.active&&p.qaForecast.active,"switching map cancels hidden radar activity")
-          capture("maps-forecast", function(){click(find(scope,"nav-settings"))});step++;return
+          if(p.activePage!=="settings")return
+          check(p.activePage==="settings"&&!p.qaRadar.active&&!p.qaRadar.playing,"leaving radars stops radar activity")
+          step++;return
         }
         if(step===7) {
-          check(p.activePage==="settings"&&!p.qaRadar.active&&!p.qaForecast.active,"Settings keeps maps inactive")
+          check(p.activePage==="settings"&&!p.qaRadar.active,"Settings keeps maps inactive")
           check(find(scope,"refresh-weather").visible,"manual refresh remains visible in Settings")
           capture("settings", function(){click(findButton(find(scope,"unit-selector"),"°F"))});step++;return
         }
@@ -277,14 +395,15 @@ ShellRoot {
           click(find(scope,"open-cities"));step++;return
         }
         if(step===10) {
-          check(p.searching&&!p.qaRadar.active&&!p.qaForecast.active,"city view suspends maps")
+          check(p.searching&&!p.qaRadar.active,"city view suspends maps")
           check(find(scope,"refresh-weather").visible,"manual refresh remains visible in the city picker")
           check(plain(scope),"markup-shaped city name remains plain text")
           capture("cities", function(){p.searching=false;p.showPage("maps");viewport.contentY=100;p.prepareOpening()});step++;return
         }
         if(step===11) {
           check(p.activePage==="weather"&&viewport.contentY===0&&!p.editingCards,"opening resets view, scroll and editor")
-          p.close();check(!p.qaRadar.active&&!p.qaForecast.active&&!p.qaCards.active,"closing stops page activity")
+          check(Math.abs(p.popupContentHeight-Commons.Style.space(760))<1,"weather register keeps the maximum popup height")
+          p.close();check(!p.qaRadar.active&&!p.qaCards.active,"closing stops page activity")
           scope.visible=false;probes.visible=true
           edgeHourly.hourly={};edgeDaily.daily={};step++;return
         }

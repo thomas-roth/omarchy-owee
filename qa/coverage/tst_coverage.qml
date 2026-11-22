@@ -9,7 +9,6 @@ ShellRoot {
   property var fixtures: @@FIXTURES@@
   property int step: 0
   property int attempts: 0
-  property int forecastRequests: 0
   function check(ok, message) { if(!ok)throw new Error("QA_COVERAGE_FAIL: "+message) }
   function find(item, name) {
     if(!item)return null
@@ -22,13 +21,11 @@ ShellRoot {
   }
   Window {
     id: window
-    visible: true; width: 460; height: 1200
+    visible: true; width: 460; height: 700
     Weather.Radar {
       id: radar; width: 432; active: true
       city: ({latitude:45.75,longitude:4.85,timezone:"Asia/Tokyo"})
-      onForecastRequested: suite.forecastRequests++
     }
-    Weather.ForecastMap { id: forecast; y: 700; width: 432; active: false }
     TestEvent { id: events }
   }
   Timer {
@@ -36,96 +33,85 @@ ShellRoot {
     onTriggered: {
       try {
         attempts++
-        if(attempts>150)throw new Error("QA_COVERAGE_FAIL: stage "+step+" timed out; coverage="+radar.coverageState)
+        if(attempts>150)throw new Error("QA_COVERAGE_FAIL: stage "+step+" timed out; frames="+radar.frameCount)
         if(step===0) {
-          if(radar.busy||radar.coverageState!=="uncovered")return
-          check(radar.frames.length===1,"transparent rain tiles preserve observations without implying dry weather")
-          check(radar.clockLabel==="City local time · Asia/Tokyo"&&radar.frameTime===fixtures.radarCityClock,"radar uses the city timezone")
-          console.warn("QA_COVERAGE_OPAQUE_PASS: opaque mask means outside radar coverage")
-          radar.radar=fixtures.clear;step++;return
+          if(radar.busy||radar.frameCount===0||!radar.imageReady)return
+          check(radar.frameCount===2&&radar.nowIndex===0,"streamed timeline spans past and future frames")
+          check(radar.frameClock===fixtures.radarCityIso.substring(11,16)&&radar.frameLead==="now","radar uses the city timezone and marks now")
+          console.warn("QA_COVERAGE_STREAM_PASS: past and future frames arrive with city local time")
+          radar.stepFrames(1);step++;return
         }
         if(step===1) {
-          if(radar.coverageState!=="covered")return
-          console.warn("QA_COVERAGE_TRANSPARENT_PASS: transparent mask means covered")
-          radar.radar=fixtures.partial;step++;return
+          check(radar.frameIndex===1&&radar.frameLead==="+1 h","stepping forward reaches the prediction frame")
+          check(radar.frameClock===fixtures.radarFutureIso.substring(11,16)&&!radar.playing,"prediction frame shows its future local time")
+          check(radar.localSource("https://example.invalid/tile.png")==="","remote image source is rejected")
+          radar.stepFrames(-1)
+          radar.playing=true
+          radar.rainData=fixtures.radarPartial.rain;step++;return
         }
         if(step===2) {
-          check(radar.coverageState==="unknown","one missing mask prevents a coverage claim")
-          check(radar.frames.length===1,"a missing mask does not suppress valid observations")
-          radar.radar=fixtures.unknown;step++;return
+          // The newest observation failed to render: the view must fall back
+          // to the nearest complete frame instead of showing an empty map.
+          check(radar.displayIndex===1&&radar.imageReady,"missing newest frame falls back to the nearest complete frame")
+          check(radar.frameClock===fixtures.radarFutureIso.substring(11,16),"fallback shows the displayed frame's local time")
+          check(radar.playing,"a single missing frame does not stop playback")
+          console.warn("QA_COVERAGE_FALLBACK_PASS: incomplete frames fall back to the nearest complete imagery")
+          radar.playing=false
+          radar.rainData=fixtures.radarMissing.rain;step++;return
         }
         if(step===3) {
-          check(radar.coverageState==="unknown","unverified coverage remains unknown despite valid opaque imagery")
-          check(radar.localSource("https://example.invalid/mask.png")==="","remote image source is rejected")
-          console.warn("QA_COVERAGE_UNKNOWN_PASS: partial and unverified masks remain unknown")
-          forecast.forecast=fixtures.forecast;step++;return
+          if(!radar.imageFault)return
+          check(radar.message.indexOf("unavailable")>=0,"frames whose files disappeared say so explicitly")
+          radar.rainData=fixtures.radarCorrupt.rain;step++;return
         }
         if(step===4) {
-          check(forecast.frameTime===fixtures.forecastCityClock,"forecast frame is formatted in Tokyo rather than desktop UTC")
-          check(forecast.frameClockLabel==="city local time · Asia/Tokyo","forecast names its city timezone")
-          check(forecast.dateTime(fixtures.forecast.run_time)===fixtures.radarCityClock&&forecast.runClockLabel==="city local time · Asia/Tokyo","model run is formatted in the city timezone")
-          console.warn("QA_COVERAGE_CITY_TIME_PASS: radar, forecast and model times use Tokyo independently of desktop UTC")
-          radar.radar=fixtures.fallback;forecast.forecast=fixtures.forecastFallback;step++;return
+          check(radar.imageFault,"undecodable files are reported like missing imagery")
+          radar.imageFault=false;radar.message=""
+          radar.rainData=fixtures.radarDefault.rain;step++;return
         }
         if(step===5) {
-          check(radar.frameTime===fixtures.radarDesktopClock&&radar.clockLabel==="Desktop local time","invalid local radar timestamp is explicitly desktop time")
-          check(forecast.frameTime===fixtures.forecastDesktopClock&&forecast.frameClockLabel==="desktop local time"&&forecast.runClockLabel==="desktop local time","invalid forecast local timestamps are explicitly desktop time")
-          radar.city={latitude:90,longitude:12,timezone:"Etc/GMT"}
-          radar.radar=fixtures.polar
-          forecast.forecast=fixtures.polar
-          step++;return
+          if(!radar.imageReady)return
+          check(radar.displayIndex===0&&radar.message==="","radar imagery recovers after image faults")
+          console.warn("QA_COVERAGE_IMAGES_PASS: missing and corrupted images fall back or show the empty state; valid imagery recovers")
+          radar.configure({wind_enabled:false});step++;return
         }
         if(step===6) {
           if(radar.busy)return
-          check(radar.projectionUnsupported&&forecast.projectionUnsupported,"both map projections report unsupported poles")
-          check(radar.city.latitude===90&&radar.city.longitude===12&&radar.radar.latitude===90&&radar.radar.longitude===12,"selected polar point was not moved")
-          var action=find(radar,"radar-forecast-cta")
-          check(!!action&&action.visible&&action.text==="See weather forecast","polar fallback action points to numeric weather")
-          check(events.mouseClick(action,action.width/2,action.height/2,Qt.LeftButton,Qt.NoModifier,1),"native fallback button receives a real click")
-          check(forecastRequests===1,"fallback signal is emitted exactly once")
-          console.warn("QA_COVERAGE_POLAR_PASS: unsupported projection keeps coordinates and emits native fallback action")
-          radar.active=false;radar.radar=fixtures.clear;forecast.forecast=fixtures.forecastReady
-          step++;return
+          check(radar.windEnabled===false&&radar.rainEnabled===true,"wind can be disabled without touching rain")
+          radar.mode="wind";step++;return
         }
         if(step===7) {
-          if(!radar.imageReady||!forecast.imageReady)return
-          radar.playing=true;forecast.playing=true
-          radar.radar=fixtures.radarMissing;forecast.forecast=fixtures.forecastMissing
-          step++;return
+          var status=find(radar,"radar-status")
+          check(!!status&&status.text==="Radar is off","a disabled radar says so and fetches nothing")
+          check(radar.frameCount===0,"a disabled radar shows no timeline frames")
+          radar.configure({wind_enabled:true});step++;return
         }
         if(step===8) {
-          if(!radar.imageError||!forecast.imageError)return
-          check(!radar.imageReady&&!forecast.imageReady,"missing files are never marked ready")
-          check(!radar.playing&&!forecast.playing,"missing imagery stops playback")
-          check(radar.message.indexOf("unavailable")>=0&&forecast.message.indexOf("unavailable")>=0,"missing imagery has explicit recovery message")
-          radar.radar=fixtures.radarCorrupt;forecast.forecast=fixtures.forecastCorrupt
+          if(radar.busy||radar.frameCount===0||!radar.imageReady)return
+          check(radar.windEnabled===true,"re-enabling the wind map fetches its data again")
+          radar.city={latitude:90,longitude:12,timezone:"Etc/GMT"}
           step++;return
         }
         if(step===9) {
-          if(!radar.imageError||!forecast.imageError)return
-          check(!radar.imageReady&&!forecast.imageReady,"undecodable files are never marked ready")
-          radar.radar=fixtures.clear;forecast.forecast=fixtures.forecastReady
+          if(radar.busy||(!radar.unsupported&&radar.frameCount===0))return
+          check(radar.unsupported,"the polar projection reports unsupported poles")
+          check(radar.city.latitude===90&&radar.city.longitude===12&&radar.radar.latitude===90&&radar.radar.longitude===12,"selected polar point was not moved")
+          console.warn("QA_COVERAGE_POLAR_PASS: unsupported projection keeps coordinates and explains itself")
+          radar.city={latitude:44,longitude:12,timezone:"Etc/GMT"}
           step++;return
         }
         if(step===10) {
-          if(!radar.imageReady||!forecast.imageReady)return
-          console.warn("QA_COVERAGE_IMAGES_PASS: missing and corrupted images stop playback; valid imagery recovers")
-          radar.city={latitude:44,longitude:12};radar.active=true
-          forecast.city={latitude:44,longitude:12};forecast.active=true
+          if(radar.busy)return
+          check(radar.message.indexOf("timed out")>=0,"silent radar workers are terminated with explicit timeout")
+          check(!radar.playing,"watchdog stops playback")
+          radar.city={latitude:45.75,longitude:4.85,timezone:"Asia/Tokyo"}
           step++;return
         }
         if(step===11) {
-          if(radar.busy||forecast.busy)return
-          check(radar.message.indexOf("timed out")>=0&&forecast.message.indexOf("timed out")>=0,"silent map workers are terminated with explicit timeout")
-          check(!radar.playing&&!forecast.playing,"watchdog stops playback")
-          radar.city={latitude:45.75,longitude:4.85};forecast.city={latitude:45.75,longitude:4.85}
-          step++;return
-        }
-        if(step===12) {
-          if(radar.busy||forecast.busy||!radar.imageReady||!forecast.imageReady)return
-          check(radar.message===""&&forecast.message==="","both maps recover after a worker timeout")
+          if(radar.busy||!radar.imageReady)return
+          check(radar.message==="","the radar recovers after a worker timeout")
           console.warn("QA_COVERAGE_WATCHDOG_PASS: silent workers terminate and a subsequent request recovers")
-          console.warn("QA_COVERAGE_PASS: masks, image faults, watchdogs, projection limits, local clocks and fallback action")
+          console.warn("QA_COVERAGE_PASS: streaming, image faults, fallbacks, watchdogs, projection limits, local clocks and per-radar switches")
           Qt.quit()
         }
       } catch(error) { console.error(error.message);Qt.exit(1) }

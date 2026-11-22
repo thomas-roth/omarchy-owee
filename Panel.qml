@@ -12,9 +12,12 @@ Panel {
   id: root
   moduleName: "owee.weather"
   manageIpc: false
-  readonly property string pluginVersion: "1.3.4"
+  readonly property string pluginVersion: "1.4.0"
   property string activePage: "weather"
-  property string mapPage: "radar"
+  property string mapPage: "rain"
+  // Height the panel card currently asks for: full for weather and settings,
+  // content-fit for the radars page (just below the legend or its toggle).
+  readonly property alias popupContentHeight: popup.contentHeight
   property bool measurementHelp: false
   property int openingSerial: 0
   onOpenedChanged: {
@@ -35,7 +38,7 @@ Panel {
     editingCards=false
     measurementHelp=false
     var content = popup.ensureContent()
-    if (content) content.resetForOpening()
+    if (content) { content.resetForOpening(); if (content.resetLegend) content.resetLegend() }
     openingSerial += 1
   }
   property var anchorItem: null
@@ -76,6 +79,11 @@ Panel {
   readonly property string cityName: result.city && result.city.name ? result.city.name : "Lyon"
   readonly property string label: primaryCurrent ? icon(primaryCurrent.weather_code, primaryCurrent.is_day) + " " + weatherFormats.number(deg(primaryCurrent.temperature_2m)) + "°" : "☁ —"
   readonly property string barTemperature: primaryCurrent && typeof primaryCurrent.temperature_2m === "number" && isFinite(primaryCurrent.temperature_2m) ? weatherFormats.number(deg(primaryCurrent.temperature_2m)) + "°" : "—"
+  readonly property string barTooltip: !primaryCurrent || typeof primaryCurrent.temperature_2m !== "number" || !isFinite(primaryCurrent.temperature_2m)
+    ? "Weather: —"
+    : (typeof primaryCurrent.apparent_temperature === "number" && isFinite(primaryCurrent.apparent_temperature)
+       ? "Weather: " + weatherFormats.number(deg(primaryCurrent.temperature_2m)) + "°" + unit + ", feels " + weatherFormats.number(deg(primaryCurrent.apparent_temperature)) + "°" + unit
+       : "Weather: " + weatherFormats.number(deg(primaryCurrent.temperature_2m)) + "°" + unit)
   readonly property color mutedText: Qt.rgba(Commons.Color.foreground.r, Commons.Color.foreground.g, Commons.Color.foreground.b, 0.72)
   readonly property color cardColor: Qt.rgba(Commons.Color.foreground.r, Commons.Color.foreground.g, Commons.Color.foreground.b, 0.075)
   readonly property color accentSoft: Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.16)
@@ -372,12 +380,23 @@ Panel {
     open: root.opened
     centerOnBar: false
     contentWidth: fittedContentWidth(Style.space(460))
-    contentHeight: fittedContentHeight(Style.space(760))
+    // Height follows the content's own implicitHeight (canonical plugin
+    // pattern): the weather register keeps today's size as the maximum, the
+    // radars page ends just below the legend or its toggle. Reading it
+    // through `loadedContent` keeps the binding alive while the lazy content
+    // is not yet built; referencing ids inside `content` directly would kill
+    // it with a ReferenceError on first evaluation.
+    contentHeight: fittedContentHeight(popup.loadedContent ? popup.loadedContent.implicitHeight : Style.space(760),
+                                       Style.space(760) + popup.verticalContentInset)
     focusTarget: popup.loadedContent
     content: FocusScope {
       id: scope
-      implicitHeight: Style.space(760)
+      // The radars page sizes itself to its content: the popup ends just
+      // below the legend (or, when it is hidden, just below its toggle).
+      readonly property real mapsFullHeight: chrome.implicitHeight + Style.space(12) + mapsColumn.implicitHeight
+      implicitHeight: root.activePage === "maps" ? mapsFullHeight : Style.space(760)
       function resetForOpening() { vertical.cancelFlick(); vertical.contentY = 0 }
+      function resetLegend() { if (radarItem) radarItem.legendVisible = false }
       function revealMeasurements() {
         vertical.cancelFlick()
         var top=measurementHeading.mapToItem(vertical,0,0).y+vertical.contentY
@@ -391,6 +410,38 @@ Panel {
         } else if (event.key === Qt.Key_PageUp) {
           vertical.contentY=Math.max(0,vertical.contentY-vertical.height*0.8)
           event.accepted=true
+        } else if (event.key === Qt.Key_1) {
+          root.showPage("weather")
+          event.accepted=true
+        } else if (event.key === Qt.Key_2) {
+          root.showPage("maps")
+          event.accepted=true
+        } else if (root.activePage === "maps" && radarItem) {
+          if (event.key === Qt.Key_R) {
+            root.mapPage="rain"
+            event.accepted=true
+          } else if (event.key === Qt.Key_W) {
+            root.mapPage="wind"
+            event.accepted=true
+          } else if (event.key === Qt.Key_L) {
+            radarItem.legendVisible=!radarItem.legendVisible
+            event.accepted=true
+          } else if (event.key === Qt.Key_Space) {
+            radarItem.togglePlayback()
+            event.accepted=true
+          } else if (event.key === Qt.Key_Left) {
+            radarItem.stepFrames(-1)
+            event.accepted=true
+          } else if (event.key === Qt.Key_Right) {
+            radarItem.stepFrames(1)
+            event.accepted=true
+          } else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) {
+            radarItem.zoomBy(1)
+            event.accepted=true
+          } else if (event.key === Qt.Key_Minus) {
+            radarItem.zoomBy(-1)
+            event.accepted=true
+          }
         }
       }
       Keys.onEscapePressed: function(event) {
@@ -471,7 +522,7 @@ Panel {
             id: pageTabs
             spacing: Style.space(8)
             Ui.Button { objectName: "nav-weather"; text: "Weather"; height: Style.space(34); focusable: true; bordered: true; selected: root.activePage === "weather" && !root.searching; onClicked: root.showPage("weather") }
-            Ui.Button { objectName: "nav-maps"; text: "Maps"; height: Style.space(34); focusable: true; bordered: true; selected: root.activePage === "maps" && !root.searching; onClicked: root.showPage("maps") }
+            Ui.Button { objectName: "nav-radars"; text: "Radars"; height: Style.space(34); focusable: true; bordered: true; selected: root.activePage === "maps" && !root.searching; onClicked: root.showPage("maps") }
           }
           FavoriteCities {
             objectName: "favorite-cities"
@@ -582,24 +633,15 @@ Panel {
             }
           }
           Column {
+            id: mapsColumn
             width: parent.width; spacing: Style.space(16)
             visible: root.activePage === "maps" && !root.searching
-            Row {
-              spacing: Style.space(8)
-              Ui.Button { objectName: "map-radar"; text: "Past rain · Radar"; focusable: true; bordered: true; selected: root.mapPage==="radar"; onClicked: {root.mapPage="radar";scope.resetForOpening()} }
-              Ui.Button { objectName: "map-forecast"; text: "Upcoming weather"; focusable: true; bordered: true; selected: root.mapPage==="forecast"; onClicked: {root.mapPage="forecast";scope.resetForOpening()} }
-            }
-            PText { width: parent.width; text: root.mapPage==="radar"?"Observed rain and snow · recent hours":"Predicted weather · next 24 hours"; color: root.mutedText; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WordWrap }
             Radar {
-              formats: weatherFormats; width: parent.width; city: Object.assign({},root.result.city || {},{timezone:root.result.data?root.result.data.timezone:""})
-              onForecastRequested: {if(Math.abs(Number(root.result.city.latitude))>85.05112878)root.showPage("weather");else{root.mapPage="forecast";scope.resetForOpening()}}
-              visible: root.mapPage==="radar"
-              active: root.opened && root.activePage==="maps" && root.mapPage==="radar" && !root.searching
-            }
-            ForecastMap {
-              formats: weatherFormats; width: parent.width; city: Object.assign({},root.result.city || {},{timezone:root.result.data?root.result.data.timezone:""})
-              visible: root.mapPage==="forecast"
-              active: root.opened && root.activePage==="maps" && root.mapPage==="forecast" && !root.searching
+              id: radarItem
+              objectName: "radar-panel"
+              formats: weatherFormats; width: parent.width; mode: root.mapPage==="wind"?"wind":"rain"; city: Object.assign({},root.result.city || {},{timezone:root.result.data?root.result.data.timezone:""})
+              active: root.opened && root.activePage==="maps" && !root.searching
+              onModeRequested: function(requested) { root.mapPage = requested === "wind" ? "wind" : "rain"; scope.resetForOpening() }
             }
           }
           Column {

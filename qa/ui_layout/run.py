@@ -54,16 +54,30 @@ if name=='weather':
         data['primary']['city']=candidate
     state.write_text(json.dumps(data))
     print(json.dumps(data));sys.exit()
-settings={'enabled':True,'zoom':6}
+settings={'enabled':True,'zoom_level':1}
 if name=='forecast_map':settings['layer']='precipitation'
 if action in ('settings','configure'):
+    if action=='configure' and arg:
+        change=json.loads(arg)
+        settings.update({key:value for key,value in change.items() if key in ('enabled','zoom_level')})
     print(json.dumps({'settings':settings}));sys.exit()
 tile=(base/'map.svg').as_uri()
 overlay=(base/'overlay.svg').as_uri()
 now=int(time.time())
 if name=='radar':
-    print(json.dumps({'width':432,'height':240,'tiles':[{'left':0,'top':0,'source':tile},{'left':256,'top':0,'source':tile}],
-      'frames':[{'time':now-1200+i*600,'tiles':[overlay,overlay]} for i in range(3)],'updated':now,'stale':False}));sys.exit()
+    frames=[{'time':now-7200+i*300,'kind':'past' if now-7200+i*300<=now else 'future',
+             'tiles':[{'left':0,'top':0,'width':432,'height':240,'source':''}]} for i in range(49)]
+    wind=[{'time':now-7200+i*900,'kind':'past' if now-7200+i*900<=now else 'future',
+           'points':[[52.2+0.5*r/4,13.0+0.9*c/6,5+(r*7+c)%25,225+(r*7+c)*3%90,10+(r+c)%30] for r in range(5) for c in range(7)]} for i in range(17)]
+    print(json.dumps({'kind':'meta','settings':settings,'now':now,'latitude':48.85,'longitude':2.35,
+      'zoom_level':1,'radius_km':100,'west':2.2,'east':2.5,'south':48.65,'north':49.05,
+      'width':432,'height':240,'tiles':[{'left':0,'top':0,'width':256,'height':256,'source':tile},{'left':256,'top':0,'width':256,'height':256,'source':tile}],
+      'rain':{'provider_name':'DWD','source_url':'https://www.dwd.de/','step_minutes':5,'now_index':24,'stale':False,'frames':frames},
+      'wind':{'provider_name':'Open-Meteo','source_url':'https://open-meteo.com/','step_minutes':15,'now_index':8,'stale':False,'frames':wind}}))
+    for index in range(49):
+        print(json.dumps({'kind':'frame','index':index,'tiles':[{'left':0,'top':0,'width':432,'height':240,'source':overlay}]}))
+    print(json.dumps({'kind':'done','partial':False,'message':''}))
+    sys.exit()
 start=(now//3600+1)*3600
 times=[start+i*10800 for i in range(4)]
 selected=json.loads(arg)['time'] if action=='frame' else times[0]
@@ -85,18 +99,24 @@ Item {
   property bool centerOnBar: false
   property real contentWidth: 460
   property real contentHeight: 760
+  property real verticalContentInset: 0
   property var focusTarget: null
   property Component content: null
   property bool contentRequested: false
   readonly property Item loadedContent: loader.item
   function fittedContentWidth(value) { return value }
-  function fittedContentHeight(value) { return value }
+  function fittedContentHeight(value, cap) {
+    return (cap !== undefined && Number(cap) > 0 && Number(value) > Number(cap)) ? Number(cap) : Number(value)
+  }
   function ensureContent() { contentRequested=true;return loader.item }
   Loader {
     id: loader
     active: root.contentRequested
     sourceComponent: root.content
-    onLoaded: { item.width=root.contentWidth;item.height=root.contentHeight }
+    onLoaded: {
+      item.width=Qt.binding(function(){return root.contentWidth})
+      item.height=Qt.binding(function(){return root.contentHeight})
+    }
   }
 }
 '''
@@ -129,13 +149,13 @@ def prepare(base, plugin, output):
     panel = panel_path.read_text()
     hook = ('  manageIpc: false\n'
             '  readonly property var qaScope: popup.loadedContent\n'
-            '  property var qaCards: null\n  property var qaRadar: null\n  property var qaForecast: null')
+            '  property var qaCards: null\n  property var qaRadar: null')
     panel = panel.replace("  manageIpc: false", hook, 1)
     panel = panel.replace("Component.onCompleted: root.refresh()", "Component.onCompleted: { root.refresh(); popup.ensureContent() }", 1)
     panel = panel.replace("    open: root.opened", "    open: false", 1)
     panel = panel.replace("  KeyboardPanel {", "  LayoutPanel {", 1)
     (destination / "LayoutPanel.qml").write_text(CONTAINER)
-    for component, property_name in (("WeatherCards", "qaCards"), ("Radar", "qaRadar"), ("ForecastMap", "qaForecast")):
+    for component, property_name in (("WeatherCards", "qaCards"), ("Radar", "qaRadar")):
         panel, count = re.subn(r"(?m)^(\s*)" + component + r"\s*\{", lambda m: m.group(0)+"\n"+m.group(1)+"  Component.onCompleted: root."+property_name+" = this", panel, count=1)
         if count != 1:
             raise RuntimeError(f"Missing {component} integration seam")
@@ -169,8 +189,8 @@ def main():
         env = os.environ.copy()
         env.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", QT_SCALE_FACTOR=str(args.scale),
                    XDG_STATE_HOME=str(base / "state"), XDG_CACHE_HOME=str(base / "cache"))
-        proc = subprocess.run(["timeout", "35s", "quickshell", "--no-color", "-p", str(base)], env=env,
-                              text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=40)
+        proc = subprocess.run(["timeout", "90s", "quickshell", "--no-color", "-p", str(base)], env=env,
+                              text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=100)
         (args.output / "test.log").write_text(proc.stdout)
         print(proc.stdout, end="")
         trace_path = plugin / "backend-trace.jsonl"

@@ -337,7 +337,7 @@ def main(argv=None):
                     trace = [json.loads(line) for line in trace_path.read_text().splitlines()]
                     if any(row.get("action") in ("notify", "notify-test") for row in trace):
                         failures.append("notification action attempted")
-                    if any(row.get("name") not in ("weather", "radar", "forecast_map") for row in trace):
+                    if any(row.get("name") not in ("weather", "radar") for row in trace):
                         failures.append("unknown fixture worker")
                 except ValueError:
                     failures.append("invalid fixture trace")

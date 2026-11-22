@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check map coverage and timezone UI with local assets and native Omarchy controls.
 
-No weather API, installed plugin, or user preference is touched. Both backend
-commands are replaced in the disposable copy, and all XDG writable paths are
+No weather API, installed plugin, or user preference is touched. The radar
+backend is replaced in the disposable copy, and all XDG writable paths are
 isolated. Requires the Omarchy reference runtime used by the other GUI checks.
 """
 from datetime import datetime, timezone
@@ -33,10 +33,10 @@ def prepare(base):
         if source.is_file() and source.suffix in (".qml", ".js", ".py", ".json"):
             shutil.copy2(source, plugin / source.name)
     # Exercise actual watchdog termination without extending the GUI suite by 50s.
-    for name in ("Radar.qml", "ForecastMap.qml"):
-        text = (plugin / name).read_text()
-        assert text.count("interval: 50000") == 1, "Production map watchdog must remain 50 seconds"
-        (plugin / name).write_text(text.replace("interval: 50000", "interval: 1000"))
+    name, watchdog = "Radar.qml", "interval: 90000"
+    text = (plugin / name).read_text()
+    assert text.count(watchdog) == 1, "Production radar watchdog must remain 90 seconds"
+    (plugin / name).write_text(text.replace(watchdog, "interval: 1000"))
     pictures = {}
     for name, content in {
         "opaque": '<rect width="256" height="256" fill="black"/>',
@@ -49,67 +49,74 @@ def prepare(base):
     stamp = int(time.time())
     tokyo = ZoneInfo("Asia/Tokyo")
     local = datetime.fromtimestamp(stamp, tokyo).isoformat(timespec="minutes")
-    tiles = [{"left": left, "top": 0, "source": pictures["base"]} for left in (0, 256)]
-    frame = {"time": stamp, "tiles": [pictures["clear"]] * 2,
-             "local_time": local, "timezone": "Asia/Tokyo"}
-
-    def radar(mask, status="available"):
-        return {"latitude": 45.75, "longitude": 4.85, "tiles": tiles,
-                "frames": [frame], "coverage_status": status,
-                "coverage_tiles": [{"left": left, "top": 0, "source": pictures[mask]} for left in (0, 256)]}
-
-    opaque, clear = radar("opaque"), radar("clear")
-    partial = radar("clear")
-    partial["coverage_tiles"][1]["source"] = ""
-    unknown = radar("opaque", "unknown")
-    fallback = radar("opaque", "unknown")
-    fallback["frames"] = [{**frame, "local_time": "not-a-timestamp"}]
     future = stamp + 3600
     future_local = datetime.fromtimestamp(future, tokyo).isoformat(timespec="minutes")
-    forecast = {"run_time": stamp, "run_local_time": local, "timezone": "Asia/Tokyo",
-                "frames": [{"time": future, "local_time": future_local,
-                            "timezone": "Asia/Tokyo", "images": []}]}
-    forecast_fallback = {**forecast, "run_local_time": "not-a-timestamp",
-                         "frames": [{**forecast["frames"][0], "local_time": "not-a-timestamp"}]}
-    missing = (base / "missing-after-backend-response.png").as_uri()
+    tiles = [{"left": left, "top": 0, "width": 256, "height": 256, "source": pictures["base"]} for left in (0, 256)]
+    frame_tiles = [{"left": 0, "top": 0, "width": 432, "height": 240, "source": pictures["clear"]}]
+
+    def radar_meta(frame_pictures, status=None):
+        value = {"kind": "meta", "settings": {"enabled": True, "rain_enabled": True, "wind_enabled": True, "zoom_level": 1},
+                 "now": stamp,
+                 "latitude": 45.75, "longitude": 4.85, "zoom_level": 1, "radius_km": 100,
+                 "west": 4.3, "east": 5.4, "south": 45.35, "north": 46.15,
+                 "width": 432, "height": 240, "tiles": tiles,
+                 "rain": {"provider_name": "DWD", "source_url": "https://www.dwd.de/", "step_minutes": 5,
+                          "now_index": 0, "stale": False, "frames": [
+                              {"time": stamp, "kind": "past", "local_time": local, "timezone": "Asia/Tokyo",
+                               "tiles": [dict(piece, source=frame_pictures[0]) for piece in frame_tiles]},
+                              {"time": future, "kind": "future", "local_time": future_local, "timezone": "Asia/Tokyo",
+                               "tiles": [dict(piece, source=frame_pictures[1]) for piece in frame_tiles]}]},
+                 "wind": {"provider_name": "Open-Meteo", "source_url": "https://open-meteo.com/", "step_minutes": 15,
+                          "now_index": 0, "stale": False, "frames": []}}
+        if status:
+            value.update(status=status[0], reason=status[1], tiles=[], frames=[], latitude=90, longitude=12,
+                         rain={key: [] if key == "frames" else value["rain"][key] for key in value["rain"]},
+                         wind={key: [] if key == "frames" else value["wind"][key] for key in value["wind"]})
+        return value
+
+    radar_default = radar_meta([pictures["clear"], pictures["clear"]])
+    # The newest frame failed to render; the view must fall back to the nearest
+    # complete frame instead of showing an empty map.
+    radar_partial = radar_meta(["", pictures["clear"]])
+    radar_missing = radar_meta([missing := (base / "missing-after-backend-response.png").as_uri()] * 2)
+    radar_corrupt = radar_meta([corrupt := (base / "corrupt.png").as_uri()] * 2)
     (base / "corrupt.png").write_bytes(b"not a valid PNG")
-    corrupt = (base / "corrupt.png").as_uri()
-    def forecast_image(source):
-        return {**forecast, "frames": [{"time": future + offset, "images": [
-            {"source": source, "left": 0, "top": 0, "width": 432, "height": 240}]} for offset in (0, 3600)]}
-    radar_missing = {**clear, "frames": [{**frame, "tiles": [missing] * 2}]}
-    radar_corrupt = {**clear, "frames": [{**frame, "tiles": [corrupt] * 2}]}
-    polar = {"status": "unsupported", "reason": "projection_limit", "latitude": 90,
-             "longitude": 12, "frames": [], "tiles": [], "coverage_tiles": [],
-             "coverage_status": "unsupported"}
-    fixtures = {"opaque": opaque, "clear": clear, "partial": partial, "unknown": unknown,
-                "fallback": fallback, "forecast": forecast, "forecastFallback": forecast_fallback,
-                "polar": polar, "radarMissing": radar_missing, "radarCorrupt": radar_corrupt,
-                "forecastMissing": forecast_image(missing), "forecastCorrupt": forecast_image(corrupt),
-                "forecastReady": forecast_image(pictures["clear"]), "radarCityClock": clock(stamp, tokyo),
-                "radarDesktopClock": clock(stamp, timezone.utc),
-                "forecastCityClock": clock(future, tokyo),
-                "forecastDesktopClock": clock(future, timezone.utc)}
+    polar = radar_meta(["", ""], ("unsupported", "projection_limit"))
+    fixtures = {"radarDefault": radar_default, "radarPartial": radar_partial,
+                "radarMissing": radar_missing, "radarCorrupt": radar_corrupt,
+                "polar": polar,
+                "radarCityIso": local, "radarFutureIso": future_local,
+                "radarCityClock": clock(stamp, tokyo)}
     (plugin / "coverage-data.json").write_text(json.dumps(fixtures))
     (plugin / "radar.py").write_text('''import json,sys,time
 from pathlib import Path
 data=json.loads(Path(__file__).with_name("coverage-data.json").read_text())
+state=Path(__file__).with_name("coverage-radar-state.json")
+default={"rain_enabled":True,"wind_enabled":True,"zoom_level":1}
+current=json.loads(state.read_text()) if state.exists() else dict(default)
 if sys.argv[1]=="load":
     city=json.loads(sys.argv[2])
     if city["latitude"]==44:time.sleep(30)
-    output=data["polar"] if abs(city["latitude"])>85.05112878 else data["opaque"]
-else:output={"settings":{"enabled":True,"zoom":6}}
-print(json.dumps(output))
-''')
-    (plugin / "forecast_map.py").write_text('''import json,sys,time
-from pathlib import Path
-data=json.loads(Path(__file__).with_name("coverage-data.json").read_text())
-if sys.argv[1] in ("load","frame"):
-    city=json.loads(sys.argv[2])
-    if city["latitude"]==44:time.sleep(30)
-    output=data["forecastReady"]
-else:output={"settings":{"enabled":True,"zoom":6,"layer":"clouds"}}
-print(json.dumps(output))
+    if abs(city["latitude"])>85.05112878:
+        print(json.dumps(data["polar"]))
+    elif city.get("modes")==["wind"]:
+        meta=data["radarDefault"]
+        wind={"provider_name":"Open-Meteo","source_url":"https://open-meteo.com/","step_minutes":15,"now_index":0,"stale":False,
+              "frames":[{"time":meta["now"],"kind":"past","points":[[45.75,4.85,3,180,0]],
+                         "local_time":data["radarCityIso"],"timezone":"Asia/Tokyo"}]}
+        print(json.dumps(dict(meta,wind=wind)))
+    else:
+        print(json.dumps(data["radarDefault"]))
+        for index in range(len(data["radarDefault"]["rain"]["frames"])):
+            print(json.dumps({"kind":"frame","index":index,"tiles":data["radarDefault"]["rain"]["frames"][index]["tiles"]}))
+    print(json.dumps({"kind":"done","partial":False,"message":""}))
+else:
+    if sys.argv[1]=="configure":
+        value=json.loads(sys.argv[2])
+        for key in ("rain_enabled","wind_enabled","zoom_level"):
+            if key in value:current[key]=value[key]
+        state.write_text(json.dumps(current))
+    print(json.dumps({"settings":current}))
 ''')
     (base / "shell.qml").write_text((HERE / "tst_coverage.qml").read_text().replace("@@FIXTURES@@", json.dumps(fixtures)))
 

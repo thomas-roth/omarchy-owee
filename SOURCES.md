@@ -10,8 +10,9 @@ not a promise of unlimited traffic or guaranteed uptime.
 | Weather and forecasts | [Open-Meteo](https://open-meteo.com/en/docs) | Global best-match numerical models. Modelled conditions, not a claim of an observation station at each point. |
 | City search | [Open-Meteo / GeoNames](https://open-meteo.com/en/docs/geocoding-api) | Gazetteer locations; coordinates work without a named city. |
 | Air and pollen | [CAMS ENSEMBLE via Open-Meteo](https://open-meteo.com/en/docs/air-quality-api) | Global and European air models have different resolution. Pollen is regional/seasonal, currently European; null is never zero. European AQI is explicitly named. |
-| Observed past rain | [RainViewer](https://www.rainviewer.com/api/weather-maps-api.html) | Past radar frames and the official coverage mask; coverage is not universal. Unknown coverage is not dry weather. Weather data by RainViewer. |
-| Future map | [ECCC GeoMet GDPS](https://eccc-msc.github.io/open-data/msc-data/nwp_gdps/readme_gdps-geomet_en/) | Global model, approximately 15 km. Forecasts, not radar observations; one selected image at a time. |
+| Rain radar | [DWD via Bright Sky](https://brightsky.dev/docs/) in Germany, [RainViewer](https://www.rainviewer.com/api/weather-maps-api.html) elsewhere | Germany: DWD composite at five minute steps, about two hours observed plus about two hours predicted. Worldwide: RainViewer composites at roughly ten minute steps; predictions exist only for part of the world and may be absent. |
+| Wind map | [Open-Meteo](https://open-meteo.com/en/docs) | Modelled 10 m wind at fifteen minute steps, about two hours observed plus about two hours predicted, drawn as a vector grid. Forecasts, not observations. |
+| Future map | — | The former ECCC GeoMet forecast map was removed; rain predictions stay inside the rain radar timeline and hourly/daily forecasts cover the outlook. |
 | Basemap | [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) | ODbL attribution; tile service use follows its [policy](https://operations.osmfoundation.org/policies/tiles/), with at least seven days' cache retention. |
 
 Open-Meteo data attribution follows [CC BY 4.0](https://open-meteo.com/en/licence)
@@ -21,11 +22,10 @@ deployment must not treat each installation as an exemption from those terms.
 No SLA is provided. Growing or commercial usage needs a separate provider
 agreement; OWEE does not silently switch to an undocumented endpoint.
 
-ECCC data: Environment and Climate Change Canada,
-[Environment Canada Open Data Licence](https://eccc-msc.github.io/open-data/licence/readme_en/)
-and [usage policy](https://eccc-msc.github.io/open-data/usage-policy/readme_en/).
-GeoMet bulk/batch timeline image downloads are not used. RainViewer attribution
-is visible in its map; its [terms](https://www.rainviewer.com/api.html) apply.
+RainViewer attribution is visible in its map; its
+[terms](https://www.rainviewer.com/api.html) apply.
+German radar imagery is provided by the Deutscher Wetterdienst (DWD) via the
+Bright Sky API; DWD radar products are use-restricted to non-commercial purposes.
 
 Network failures, rate limits, stale data, incomplete fields and unsupported
 map projections are displayed explicitly. Web Mercator cannot represent the

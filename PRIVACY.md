@@ -9,10 +9,14 @@ City searches go directly to Open-Meteo's geocoding service. Selected coordinate
 go to Open-Meteo for weather and CAMS forecasts. These providers also receive the
 network IP address. Manual coordinates bypass city geocoding.
 
-RainViewer, ECCC GeoMet and OpenStreetMap receive the selected map area only
-after that map is enabled and visible. Closing or leaving its page stops map
-workers and playback. Radar coverage masks are downloaded alongside radar data.
-Weather for the bar refreshes every 15 minutes when automatic refresh is enabled.
+RainViewer, OpenStreetMap, DWD (via Bright Sky) and Open-Meteo
+receive the selected map area only after that map is enabled and visible.
+Closing or leaving its page stops map workers and playback. In Germany the
+rain radar uses the DWD composite through Bright Sky; elsewhere it uses
+RainViewer. The wind map requests a small model grid around the selected area
+from Open-Meteo. Each radar can be disabled on its own page; a disabled radar
+makes no requests. Weather for the bar refreshes every 15 minutes when
+automatic refresh is enabled.
 The viewed location is refreshed when needed; optional air/pollen has a one-hour
 cache and its own worker. Disabling automatic refresh pauses automatic rules;
 explicit user actions may still contact providers.

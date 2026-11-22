@@ -1,3 +1,59 @@
+# OWEE 1.4.0
+
+## Rain and wind radars with past and future in one timeline
+
+The Maps register becomes **Radars** with two pages: Rain and Wind. The
+former forecast map page is gone. Each radar covers two hours before and two
+hours after now in a single timeline that opens on the latest observation.
+The mark on the timeline separates observed frames from predictions, and
+frames carry their distance from now.
+
+In Germany the rain radar uses the DWD composite through Bright Sky at five
+minute steps, with the model's prediction attached. Elsewhere it uses
+RainViewer's worldwide feed at roughly ten minute steps; predictions exist
+only for part of the world and may be absent there. The wind map draws
+Open-Meteo's modelled 10 m wind as a moving vector field at fifteen minute
+steps over the same window.
+
+Frames stream in newest-first, so the current conditions paint before the
+rest of the timeline. Basemap tiles and radar images are cached; a repeat
+visit is instant. A cold first load can take a minute while the DWD service
+renders each requested timestep; frames appear as they finish. Zoom follows
+the previous radar's model (default level 1, levels −2 to 3).
+
+**New keybinds in the Radars register:** `1`/`2` switch Weather and Radars,
+`R`/`W` switch the rain radar and wind map, `L` toggles the legend,
+`Space` plays or pauses, `←`/`→`
+step one frame, `+`/`−` zoom. The same actions remain available as on-screen
+controls. Frames whose imagery cannot be
+fetched do not blank the map; the view falls back to the nearest complete
+frame and explains what happened. The old radar coverage masks are gone; the
+rain overlay itself shows where observations exist.
+
+**Readable maps:** a `Legend` toggle on each radar explains its colour scale
+in real units — rain intensity in mm/h on the DWD composite scale (three
+compact columns), wind arrows in km/h. The legend stays hidden whenever the
+popup opens. The rain timeline's "now" snaps to the five minute grid so step
+leads read 5, 10, 15 minutes; the wind map's frames sit on the wall-clock 15
+minute grid and its timeline opens on a frame that reads "now". `Space` always
+plays or pauses the radar while the register is open, even when a control such
+as the legend toggle was the last thing clicked. The basemap is dimmed a
+little in rain mode and more strongly in wind mode, where particles and
+arrows are also drawn thicker, so the overlays read clearly. The date and
+time sit between the two radar control button groups; the frame's distance
+from now is centered below the timeline, always shown in full.
+The OpenStreetMap attribution is
+smaller and sits unobtrusively on the imagery. A zoom step into an area whose
+map tiles are not cached yet may briefly outpace the shared per-minute
+download budget; the newest frames still paint first and the radar completes
+the remaining ones on its own about a minute later, so it recovers without a
+reopen. The popup height now follows
+the active view: the weather register keeps the previous height as the
+maximum, and the radars page ends just below the radar and timeline, growing
+only when the legend is shown.
+
+---
+
 # OWEE 1.3.4
 
 ## Refresh beside Settings
@@ -70,7 +126,8 @@ Released as stable by maintainer decision on 16 November 2026.
 
 ## Features
 
-- A compact weather symbol and temperature in the Omarchy bar.
+- A compact weather symbol in the Omarchy bar; hovering the widget shows
+  "Weather: x°C, feels y°C".
 - Separate primary and viewed cities, favorites and coordinate search.
 - Hourly forecasts and daily local-time precipitation timelines.
 - Animated historical radar, coverage masks and on-demand forecast maps.

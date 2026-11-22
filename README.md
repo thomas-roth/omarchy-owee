@@ -33,7 +33,8 @@ interface, from the custom weather symbol to the hourly rain timelines.
 The design follows a few simple principles:
 
 - **Recognize the weather immediately.** Distinctive weather marks communicate
-  the condition, with the temperature always visible in the bar.
+  the condition, with the icon alone in the bar; the tooltip names the
+  temperature and the felt temperature.
 - **Give each graphic a purpose.** Temperatures have explicit Low/High labels.
   Daily precipitation uses a 00:00–24:00 timeline so you can locate likely rain
   periods directly.
@@ -127,13 +128,38 @@ No API key, account, subscription or third-party Python runtime package is neede
 
 | View | What it helps you understand |
 | --- | --- |
-| **Bar** | The primary city's condition and temperature at a glance. |
+| **Bar** | The primary city's condition icon; hover shows temperature and felt temperature. |
 | **Now** | Modelled current conditions, feels-like temperature and today's Low/High. |
 | **Hourly** | How temperatures and rain/snow probabilities change over the next hours. |
 | **Daily** | Each day's conditions and the times when precipitation may occur. |
-| **Measurements** | Wind, humidity, UV, solar events, pressure, visibility and optional air/pollen data. |
-| **Past rain / Radar** | Recent observed precipitation, with radar coverage information. |
-| **Upcoming weather** | Model forecast maps for precipitation, temperature and clouds. |
+| **Measurements** | Wind, humidity, UV, solar events, pressure, visibility and optional air/pollen data; unavailable values never become zero. |
+| **Past rain / Radar** | Observed and predicted precipitation at five minute steps (DWD in Germany) or roughly ten minute steps worldwide. |
+| **Wind** | Modelled wind as a moving vector field at fifteen minute steps, from two hours before to two hours after now. |
+
+**Radar keybinds.** In the Radars register: `1` and `2` switch Weather and
+Radars, `R` and `W` switch the rain radar and wind map, `L` toggles the
+legend, `Space` plays or pauses
+the timeline and does nothing else while the register is open, `←`/`→` step
+one frame, and `+`/`−` zoom the map. The timeline opens on the latest
+observation, snapped to the five minute grid; the marker on the bar separates
+observed frames from predictions. The date and time sit between the two radar
+control button groups, and the frame's distance from now ("now", "+25 min",
+"+1 h 55 min") is centered below the timeline on the source line — always
+shown in full.
+A `Legend` toggle explains the colour
+scales — rain intensity in mm/h (the DWD composite scale), wind arrows in
+km/h. It stays hidden whenever the popup is opened, and the popup height
+follows the radars view so it ends just below the radar and timeline, growing
+only when the legend is shown.
+
+**Map readability.** The basemap is dimmed — a little in rain mode, more in
+wind mode — so the radar colours and the wind vector field stand out. Zooming
+to a fresh zoom level needs more map tiles than the shared download budget
+allows in one minute; the newest frames paint first and the radar quietly
+completes the remaining frames about a minute later on its own, so a cold
+zoom step no longer stays empty until the panel is reopened. The
+date and time sit between the two radar control button groups; the frame's
+distance from now is centered below the timeline, always shown in full.
 
 **The blue bars represent probability.** In the daily view, brighter blue means
 higher rain/snow chance, grey means zero, and an outline means no hourly data.
@@ -144,8 +170,9 @@ probability covers the hour ending at its timestamp; OWEE labels that interval.
 UTC periods, skipped hours are identified, and polar day/night are explicit.
 The daily rain axis stays 00:00–24:00 even when using system display formats.
 
-**Favorites are one click away.** Saved cities sit beside Weather and Maps.
-Click a city to view it immediately; Maps stays open when switching locations.
+**Favorites are one click away.** Saved cities sit beside Weather and Radars.
+Click a city to view it immediately; the Radars page stays open when switching
+locations.
 Scroll the strip for more cities or use Tab to reach them. The highlighted city
 is the one being viewed; the star marks the city used by the bar and notifications.
 
@@ -154,10 +181,12 @@ city or decimal `latitude, longitude`, such as `27.7172, 85.3240`. Favorites kee
 places close. **Use in bar**, beside the bar-city label, makes the viewed city primary for both
 the bar and notifications.
 
-**Coverage is visible.** Radar coverage masks distinguish missing observations
-from dry conditions. Air and pollen vary by region; unavailable values do not
-become zero. Maps are opt-in, stop when hidden and explain projection limits
-near the poles. Forecast maps are model predictions, distinct from radar.
+**One radar per metric.** The rain radar shows observed precipitation followed
+by the model prediction in a single timeline; DWD covers Germany at five minute
+steps, RainViewer covers the world at roughly ten minute steps. The wind map
+animates Open-Meteo's modelled wind. Maps are opt-in, stop when hidden and
+explain projection limits near the poles. Rain shows model predictions after
+the observed frames; wind is always modelled.
 
 **Notifications stay under your control.** Quiet hours and the daily summary
 follow the desktop clock; weather intervals follow the primary city's timezone.

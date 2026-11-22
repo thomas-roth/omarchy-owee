@@ -10,7 +10,6 @@ ignore = ["E701", "E702"]
 [tool.ruff.lint.per-file-ignores]
 # CLI/QA entrypoints install their local module path or disable bytecode first.
 "weather.py" = ["E402"]
-"forecast_map.py" = ["E402"]
 "qa/city_search/run.py" = ["E402"]
 "qa/international.py" = ["E402"]
 "qa/live_maps.py" = ["E402"]

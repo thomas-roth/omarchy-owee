@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -14,7 +15,16 @@ Panel {
   manageIpc: false
   readonly property string pluginVersion: "1.3.4"
   property string activePage: "weather"
-  property string mapPage: "radar"
+  // The card height follows the active page: the hourly forecast on Weather
+  // and the map on Radar, capped by the available screen height.
+  readonly property real pageContentHeight: popup.loadedContent && popup.loadedContent.pageContentHeight !== undefined ? popup.loadedContent.pageContentHeight : Style.space(760)
+  // Current city wind, shown on the wind map beside the DWD barbs.
+  readonly property string windSummary: {
+    var current = root.current
+    if (!current || current.wind_speed_10m === undefined || current.wind_speed_10m === null
+        || !isFinite(current.wind_speed_10m)) return ""
+    return root.number(current.wind_speed_10m, " km/h") + " · " + WeatherModel.windOrigin(current.wind_direction_10m)
+  }
   property bool measurementHelp: false
   property int openingSerial: 0
   onOpenedChanged: {
@@ -22,13 +32,47 @@ Panel {
     else { searching=false; cancelSearch();if(airWorker.running)airWorker.running=false }
   }
   function showPage(page) {
-    if (["weather","maps","settings"].indexOf(page)<0) return
+    if (["weather","radar","settings"].indexOf(page)<0) return
     activePage=page
     searching=false
     suggestions=[]
     if(page!=="settings") editingCards=false
     var content=popup.ensureContent()
     if(content) content.resetForOpening()
+    Qt.callLater(focusCurrentPage)
+  }
+  function showMapLayer(layer) {
+    if (["rain","wind"].indexOf(layer)<0) return
+    showPage("radar")
+    var content=popup.ensureContent()
+    var map=content?findItem(content,"radar-panel"):null
+    if(map && typeof map.selectLayer==="function") map.selectLayer(layer)
+    Qt.callLater(focusCurrentPage)
+  }
+  function focusCurrentPage() {
+    var content=popup.loadedContent
+    if (!content) return
+    if (activePage==="radar") {
+      var map=findItem(content,"radar-panel")
+      if (map && typeof map.focusViewport==="function" && map.focusViewport()) return
+    }
+    content.forceActiveFocus()
+  }
+  function zoomRadar(delta) {
+    var content = popup.loadedContent
+    var map = content ? findItem(content, "radar-panel") : null
+    if (!map || typeof map.zoomBy !== "function") return false
+    map.zoomBy(delta)
+    return true
+  }
+  function findItem(item,name) {
+    if (!item) return null
+    if (item.objectName===name) return item
+    for (var i=0;item.children && i<item.children.length;i++) {
+      var found=findItem(item.children[i],name)
+      if (found) return found
+    }
+    return null
   }
   function prepareOpening() {
     activePage="weather"
@@ -372,25 +416,60 @@ Panel {
     open: root.opened
     centerOnBar: false
     contentWidth: fittedContentWidth(Style.space(460))
-    contentHeight: fittedContentHeight(Style.space(760))
+    contentHeight: fittedContentHeight(root.pageContentHeight)
     focusTarget: popup.loadedContent
     content: FocusScope {
       id: scope
-      implicitHeight: Style.space(760)
+      implicitHeight: pageContentHeight
       function resetForOpening() { vertical.cancelFlick(); vertical.contentY = 0 }
+      // Fit the card to the active page. Weather ends after the hourly
+      // forecast; radar ends after the map. Other pages keep the old height.
+      readonly property real pageContentHeight: {
+        if (root.searching) return Style.space(760)
+        if (root.activePage === "radar")
+          return chrome.implicitHeight + Style.space(12) + radarPanel.implicitHeight + Style.space(8)
+        if (root.activePage === "weather")
+          return chrome.implicitHeight + Style.space(12) + heroSection.implicitHeight + weatherView.spacing + hourlySection.implicitHeight + Style.space(8)
+        return Style.space(760)
+      }
       function revealMeasurements() {
         vertical.cancelFlick()
         var top=measurementHeading.mapToItem(vertical,0,0).y+vertical.contentY
         vertical.contentY=Math.max(0,Math.min(Math.max(0,vertical.contentHeight-vertical.height),top))
       }
       Component.onCompleted: if (root.opened) resetForOpening()
+      function textEntryFocused() {
+        var item = scope.Window ? scope.Window.activeFocusItem : null
+        while (item) {
+          if (item.cursorPosition !== undefined || item.acceptableInput !== undefined) return true
+          item = item.parent
+        }
+        return false
+      }
+      Keys.priority: Keys.BeforeItem
       Keys.onPressed: function(event) {
         if (event.key === Qt.Key_PageDown) {
           vertical.contentY=Math.min(Math.max(0,vertical.contentHeight-vertical.height),vertical.contentY+vertical.height*0.8)
           event.accepted=true
-        } else if (event.key === Qt.Key_PageUp) {
+          return
+        }
+        if (event.key === Qt.Key_PageUp) {
           vertical.contentY=Math.max(0,vertical.contentY-vertical.height*0.8)
           event.accepted=true
+          return
+        }
+        if (root.searching || textEntryFocused()) return
+        if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+        var letter = event.text && event.text.length === 1 ? event.text.toUpperCase() : ""
+        if (letter === "1") { root.showPage("weather"); event.accepted=true }
+        else if (letter === "2") { root.showPage("radar"); event.accepted=true }
+        else if (letter === "R") { root.showMapLayer("rain"); event.accepted=true }
+        else if (letter === "W") { root.showMapLayer("wind"); event.accepted=true }
+        else if (root.activePage === "radar" && (event.text === "+" || event.key === Qt.Key_Plus || event.key === Qt.Key_Equal)) {
+          root.zoomRadar(1); event.accepted=true
+        }
+        else if (root.activePage === "radar" && (event.text === "-" || event.text === "−" || event.key === Qt.Key_Minus)) {
+          root.zoomRadar(-1); event.accepted=true
         }
       }
       Keys.onEscapePressed: function(event) {
@@ -470,8 +549,8 @@ Panel {
           Row {
             id: pageTabs
             spacing: Style.space(8)
-            Ui.Button { objectName: "nav-weather"; text: "Weather"; height: Style.space(34); focusable: true; bordered: true; selected: root.activePage === "weather" && !root.searching; onClicked: root.showPage("weather") }
-            Ui.Button { objectName: "nav-maps"; text: "Maps"; height: Style.space(34); focusable: true; bordered: true; selected: root.activePage === "maps" && !root.searching; onClicked: root.showPage("maps") }
+            Ui.Button { objectName: "nav-weather"; text: "Weather"; height: Style.space(34); focusable: true; bordered: true; tooltipText: "Weather · 1"; selected: root.activePage === "weather" && !root.searching; onClicked: root.showPage("weather") }
+            Ui.Button { objectName: "nav-radar"; text: "Radar"; height: Style.space(34); focusable: true; bordered: true; tooltipText: "Radar · 2"; selected: root.activePage === "radar" && !root.searching; onClicked: root.showPage("radar") }
           }
           FavoriteCities {
             objectName: "favorite-cities"
@@ -541,6 +620,7 @@ Panel {
             width: parent.width; spacing: Style.space(20)
             visible: root.activePage === "weather" && !root.searching
             AnimatedSection {
+              id: heroSection
               width: parent.width; progress: openingMotion.progress; start: 0
               Rectangle {
                 id: hero
@@ -573,6 +653,7 @@ Panel {
               }
             }
             AnimatedSection {
+              id: hourlySection
               width: parent.width; progress: openingMotion.progress; start: 0.08
               HourlyForecast { objectName: "hourly-forecast"; width: parent.width; formats: weatherFormats; hourly: root.hourly; current: root.current; startIndex: root.hourStart(); unit: root.unit; stale: root.result.stale===true; scrollView: vertical }
             }
@@ -583,23 +664,16 @@ Panel {
           }
           Column {
             width: parent.width; spacing: Style.space(16)
-            visible: root.activePage === "maps" && !root.searching
-            Row {
-              spacing: Style.space(8)
-              Ui.Button { objectName: "map-radar"; text: "Past rain · Radar"; focusable: true; bordered: true; selected: root.mapPage==="radar"; onClicked: {root.mapPage="radar";scope.resetForOpening()} }
-              Ui.Button { objectName: "map-forecast"; text: "Upcoming weather"; focusable: true; bordered: true; selected: root.mapPage==="forecast"; onClicked: {root.mapPage="forecast";scope.resetForOpening()} }
-            }
-            PText { width: parent.width; text: root.mapPage==="radar"?"Observed rain and snow · recent hours":"Predicted weather · next 24 hours"; color: root.mutedText; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WordWrap }
+            visible: root.activePage === "radar" && !root.searching
             Radar {
+              id: radarPanel
+              objectName: "radar-panel"
               formats: weatherFormats; width: parent.width; city: Object.assign({},root.result.city || {},{timezone:root.result.data?root.result.data.timezone:""})
-              onForecastRequested: {if(Math.abs(Number(root.result.city.latitude))>85.05112878)root.showPage("weather");else{root.mapPage="forecast";scope.resetForOpening()}}
-              visible: root.mapPage==="radar"
-              active: root.opened && root.activePage==="maps" && root.mapPage==="radar" && !root.searching
-            }
-            ForecastMap {
-              formats: weatherFormats; width: parent.width; city: Object.assign({},root.result.city || {},{timezone:root.result.data?root.result.data.timezone:""})
-              visible: root.mapPage==="forecast"
-              active: root.opened && root.activePage==="maps" && root.mapPage==="forecast" && !root.searching
+              windSummary: root.windSummary
+              onWeatherRequested: root.showPage("weather")
+              visible: true
+              active: root.opened && root.activePage==="radar" && !root.searching
+              preload: root.opened && root.activePage!=="radar" && !root.searching
             }
           }
           Column {
